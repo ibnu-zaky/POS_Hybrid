@@ -1,5 +1,7 @@
 const { withTenantContext } = require("../config/database");
 const inventoryRepository = require("../repositories/inventory.repository");
+const cache = require("../config/cache");
+const env = require("../config/env");
 
 class StockError extends Error {
   constructor(message = "Stock error", statusCode = 409) {
@@ -60,6 +62,8 @@ async function applyStockDeltas(client, { merchantId, items, sign, type, transac
       referenceId,
       createdBy,
     });
+    // Invalidasi cache availability untuk SKU ini
+    await cache.del("inv-avail", [merchantId, sku]);
     movements += 1;
   }
 
@@ -145,18 +149,32 @@ async function adjustStock({ merchantId, inventoryId, staffId, payload }) {
       referenceId: payload.reference_id,
       createdBy: staffId,
     });
+    await cache.del("inv-avail", [merchantId, existing.sku]);
 
     return updated;
   });
 }
 
 async function getAvailability({ merchantId, skus }) {
-  return withTenantContext(merchantId, async (client) => {
-    const rows = await inventoryRepository.findAvailability(client, merchantId, skus);
+  const ttl = env.INVENTORY_CACHE_TTL_SECONDS;
 
-    const data = {};
+  // Coba ambil per-SKU dari cache
+  const result = {};
+  const missing = [];
+  for (const sku of skus) {
+    const cached = await cache.get("inv-avail", [merchantId, sku]);
+    if (cached) result[sku] = cached;
+    else missing.push(sku);
+  }
+
+  if (!missing.length) return result;
+
+  // Query hanya SKU yang belum ada di cache
+  const fresh = await withTenantContext(merchantId, async (client) => {
+    const rows = await inventoryRepository.findAvailability(client, merchantId, missing);
+    const map = {};
     for (const row of rows) {
-      data[row.sku] = {
+      map[row.sku] = {
         product_name: row.product_name,
         quantity: row.quantity,
         available: row.quantity > 0,
@@ -164,8 +182,17 @@ async function getAvailability({ merchantId, skus }) {
         status: stockStatus(row.quantity, row.reorder_point),
       };
     }
-    return data;
+    return map;
   });
+
+  // Simpan ke cache (termasuk SKU yang tidak ditemukan → null agar tidak re-query)
+  for (const sku of missing) {
+    const value = fresh[sku] ?? null;
+    await cache.set("inv-avail", [merchantId, sku], value, ttl);
+    if (value) result[sku] = value;
+  }
+
+  return result;
 }
 
 async function listMovements({ merchantId, sku, limit = 50, offset = 0 }) {

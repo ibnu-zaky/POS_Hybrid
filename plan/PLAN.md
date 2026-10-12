@@ -119,18 +119,18 @@ Alur arsitektur: `Route → Controller → Service → Repository → PostgreSQL
 - **Idempotency**: webhook (dedup event_id) dan client transaction (`Idempotency-Key`) — aman retry/duplicate/out-of-order.
 
 ### Phase 2: Analytics & Operations (Month 7–12) — ringkas
-- **2.1 Advanced Analytics** (⬜): sales per produk, margin (pakai `inventory.unit_cost`), turnover estimasi, slow-moving SKUs — pendekatan DB-native (materialized view), warehouse eksternal (BigQuery) ditunda.
+- **2.1 Advanced Analytics** ✅: migrasi `010_analytics.sql` — view `v_daily_sales` (`security_invoker = true`, RLS tetap berlaku tanpa matview+refresh). Endpoints: `GET /admin/analytics/sales-by-product?from=&to=&limit=`, `/margin?from=&to=&limit=` (revenue − qty×`COALESCE(inventory.unit_cost,0)`, null-safe `has_cost`), `/slow-moving?days=&limit=` (inventory tanpa penjualan N hari), `/turnover?from=&to=&limit=` (sold/current_stock estimasi). Files: `analytics.schema/repository/service/controller.js`, routes di `admin.routes.js`. Test: `tests/phase-2-1.test.js` (8 test, merchant khusus inline).
 - **2.2 HR/Staff** ✅: migrasi `009_hr_staff.sql` — kolom HR di `staff` (hire_date, employment_type, hourly_rate, monthly_salary, commission_rate) + tabel `shifts` (UNIQUE per staff/hari, cek overlap), `timesheets` (satu clock-in terbuka per staff via unique partial index), `commissions` (UNIQUE per staff/hari → upsert idempotent). Endpoints: CRUD `/admin/hr/shifts`, `GET /admin/hr/timesheets`, `GET /admin/hr/staff-performance?from=&to=` (agregat transaksi per cashier), `PATCH /admin/hr/staff/:id` (field HR), `POST /admin/hr/commissions/calculate?date=`, `GET /admin/hr/commissions`, `PATCH /admin/hr/commissions/:id` (paid); clock `/pos/hr/clock-in|clock-out` (admin/manager/cashier, auto-link shift hari ini). Files: `hr.schema/repository/service/controller.js`, `tests/phase-2-2.test.js` (14 test, merchant khusus).
 
 ### Phase 3: Omnichannel & Ecosystem (Month 13–18) — ringkas
-- **3.1 E-Commerce**: connector Tokopedia/Shopee/WooCommerce — pull orders (polling 5 menit + webhook), inventory sync real-time, auto-confirm + fulfillment status.
-- **3.2 Click & Collect**: order online → reserve inventory 24 jam → pickup QR verification. Tabel `click_and_collect_orders`.
-- **3.3 Accounting**: sync harian ke Xero/MYOB/QuickBooks; GL mapping (sales 4100, COGS 5100, tax 2100, cash 1000, dsb.); e-Faktur PPN.
+- **3.1 E-Commerce Connector** ✅: migrasi `011_ecommerce.sql` — tabel `ecommerce_connections` (marketplace enum, credentials ter-encrypt AES-256-CBC, UNIQUE merchant+store), `ecommerce_orders` (UNIQUE connection+marketplace_order_id, status enum pending→confirmed→shipped→delivered/cancelled/refunded), `ecommerce_order_items` (RLS via subquery ke orders). Adapter pattern: `base-adapter.js` (interface), `dummy-adapter.js` (fetchOrders/fetchOrder/updateFulfillment/pushInventory/verifyWebhook/normalizeWebhook), `factory.js` (tokopedia/shopee/woocommerce placeholder). Endpoints: CRUD `/admin/ecommerce/connections`, `POST /connections/:id/sync` (pull orders via adapter, upsert idempotent), `POST /connections/:id/push-inventory`, `GET /ecommerce/orders?status=&from=&to=`, `GET /ecommerce/orders/:id` (dengan items), `PATCH /ecommerce/orders/:id/fulfill` (status + tracking ke raw_payload). Files: `ecommerce.schema/repository/service/controller.js`, `tests/phase-3-1.test.js` (19 test, merchant khusus + RLS cross-merchant).
+- **3.2 Click & Collect** ✅: migrasi `012_click_and_collect.sql` + `012b_cnc_movement_types.sql` — tabel `click_and_collect_orders` (source_order_id nullable FK ecommerce_orders, pickup_code VARCHAR(8) UNIQUE per merchant, status pending→ready→picked_up→expired/cancelled, expires_at 24 jam, partial index pending-expiry untuk cleanup). Alur: create reservation = validasi stok (FOR UPDATE) + physical deduct (movement `cnc_reserve`) + generate pickup_code unik; verify pickup = by pickup_code, stok tidak di-deduct ulang (sudah hold); cancel = restock (`cnc_cancel`); expire batch = restock (`cnc_expire`). Endpoints: `POST /admin/click-and-collect`, `GET /click-and-collect?status=`, `GET /click-and-collect/:id`, `POST /click-and-collect/verify` (body pickup_code), `POST /click-and-collect/:id/cancel`, `POST /click-and-collect/expire`. Files: `click-and-collect.schema/repository/service/controller.js`, `tests/phase-3-2.test.js` (13 test, merchant khusus + RLS cross-merchant).
+- **3.3 Accounting** ✅: migrasi `013_accounting.sql` — tabel `accounting_connections` (provider xero/myob/quickbooks/dummy, credentials ter-encrypt, UNIQUE merchant+provider), `journal_entries` (CHECK total_debit=total_credit, partial unique per merchant+date+ref via index), `journal_lines` (CHECK debit XOR credit), `tax_invoices` (DPP, PPN rate 11%/12%, faktur_pajak_number, UNIQUE merchant+invoice_number). GL mapping: Cash 1000, AR 1200, Inventory 1300, Sales 4100, COGS 5100, PPn Keluaran 2100. Journal harian: agregasi transaksi completed per hari (Asia/Jakarta) → DR Cash (grand_total), CR Sales (DPP), CR Tax, DR COGS (est. dari unit_cost), CR Inventory. Tax invoice: DPP=sum(qty×price), PPN=DPP×rate, issue → generate faktur_pajak_number (format 010.000-26.XXXXX). Adapter: accounting `base-adapter.js`, `dummy-adapter.js`, `factory.js`. Endpoints: CRUD `/admin/accounting/connections`, `POST /connections/:id/sync` (push journal posted), `POST /journal/daily?date=`, `GET /journal?from=&to=&status=`, `GET /journal/:id`, `POST /journal/:id/post`, `POST/GET /tax-invoices`, `POST /tax-invoices/:id/issue`. Files: `accounting.schema/repository/service/controller.js`, `tests/phase-3-3.test.js` (18 test, merchant khusus + RLS cross-merchant).
 
 ### Infrastructure & Deployment (4.1–4.3) — ringkas
-- **4.1 Cloud**: AWS — CloudFront → ALB → ECS (API/Web) + RDS PostgreSQL + ElastiCache Redis + S3 (receipts) + SQS (jobs) + SNS. IaC Terraform; CI/CD GitHub Actions (test per PR, staging auto, prod manual approval, blue-green).
-- **4.2 Monitoring**: p50/p95/p99 latency, error rate, query time, payment success rate. Alert: latency >500ms warning; error >1% critical; gateway down → page.
-- **4.3 Security**: PCI-DSS readiness (TLS 1.3, tokenisasi via gateway, no card storage), rate limiting 100 req/menit, helmet, CORS allowlist, audit logging, data residency Indonesia.
+- **4.1 Cloud** ⬜: AWS — CloudFront → ALB → ECS (API/Web) + RDS PostgreSQL + ElastiCache Redis + S3 (receipts) + SQS (jobs) + SNS. IaC Terraform; CI/CD GitHub Actions (test per PR, staging auto, prod manual approval, blue-green).
+- **4.2 Monitoring & Rate Limiting** ✅: Rate limiting in-memory (`middleware/rate-limit.js`, fixed window per IP, global 100 req/menit + /auth 10 req/menit, `X-RateLimit-*` headers, 429 + `Retry-After`; nonaktif di test kecuali `forceInTest`). Request ID tracing (`middleware/request-id.js` — safe regex, `X-Request-Id`). Metrics service (`services/metrics.service.js` — counters HTTP/payment/webhook, latency ring buffer per route → p50/p95/p99, status buckets, `payment_success_rate`). Metrics middleware + `GET /metrics`. Pino-http dengan `genReqId`. Trust proxy (`TRUST_PROXY=1`).
+- **4.3 Security & Cache** ✅: CORS allowlist (`CORS_ORIGINS` comma-separated; kosong = allow all dev-only; origin tanpa header = curl/mobile diizinkan). Helmet (CSP off untuk JSON API). Express body limit 1mb. Cache layer (`config/cache.js`) — Redis opsional via `REDIS_URL` (dynamic require `redis`, fallback in-memory TTL bila koneksi gagal); API `get/set/del/delNamespace`, namespace per fitur. Inventory availability di-cache per-SKU (`inv-avail:{merchant}:{sku}`, TTL `INVENTORY_CACHE_TTL_SECONDS` default 300s) + invalidasi saat stok berubah (sale via `applyStockDeltas`, adjust, return). Audit logging payment events (`paymentAudit` → `auth_audit_logs`) sudah ada sejak Phase 1.3.
 
 ### Testing (5.1) — ringkas
 Unit 80% coverage, integration 60%, e2e key flows. Fokus: validasi amount, negative test, sync inventory setelah payment, isolasi tenant.
@@ -147,7 +147,7 @@ Unit 80% coverage, integration 60%, e2e key flows. Fokus: validasi amount, negat
 ```
 Route → Controller → Service → Repository → PostgreSQL
 ```
-- Struktur: `src/routes/`, `src/controllers/`, `src/services/`, `src/repositories/`, `src/middleware/`, `src/schemas/`, `src/payments/` (adapters), `src/config/`, `src/utils/`.
+- Struktur: `src/routes/`, `src/controllers/`, `src/services/`, `src/repositories/`, `src/middleware/`, `src/schemas/`, `src/payments/` (adapters), `src/config/`, `src/utils/`. Middleware hardening: `rate-limit.js`, `request-id.js`, `metrics.js`. Config: `cache.js` (Redis/in-memory).
 - **Tenant context**: semua query data wajib lewat `withTenantContext(pool, merchantId, callback)` — `BEGIN` → `set_config('app.merchant_id', $1, true)` → callback → `COMMIT`/`ROLLBACK`; param ketiga `true` = hanya berlaku selama transaksi (penting untuk pg pool).
 - **Validasi**: Zod schema per route (`src/schemas/*.schema.js`).
 - **Error handling**: kelas error kustom (`utils/api-error.js`) + `error-handler.js` middleware; webhook invalid signature → 401/403.
@@ -175,6 +175,11 @@ Route → Controller → Service → Repository → PostgreSQL
   7. `007_inventory.sql` — inventory, inventory_movements
   8. `008_transaction_idempotency.sql` — kolom `idempotency_key` di transactions + partial unique index
   9. `009_hr_staff.sql` — kolom HR di staff + shifts, timesheets, commissions
+ 10. `010_analytics.sql` — view `v_daily_sales` (security_invoker=true)
+ 11. `011_ecommerce.sql` — ecommerce_connections, ecommerce_orders, ecommerce_order_items
+ 12. `012_click_and_collect.sql` — click_and_collect_orders
+ 12b. `012b_cnc_movement_types.sql` — extend inventory_movements type (+cnc_reserve/cnc_cancel/cnc_expire)
+ 13. `013_accounting.sql` — accounting_connections, journal_entries, journal_lines, tax_invoices
 - Dijalankan dengan **psql postgres superuser**: `psql -d pos_hybrid -f migrations/00X_*.sql` (butuh superuser untuk CREATE ROLE/extension; app connect sebagai `pos_app`).
 
 ### Environment variables utama
@@ -186,6 +191,15 @@ PAYMENT_WEBHOOK_TOLERANCE_SECONDS=300
 STRIPE_ENABLED / STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET
 XENDIT_ENABLED / XENDIT_SECRET_KEY / XENDIT_WEBHOOK_TOKEN
 QRIS_ENABLED / QRIS_PROVIDER=xendit
+# Hardening (Phase 4.2–4.3)
+RATE_LIMIT_WINDOW_MS=60000
+RATE_LIMIT_MAX=100
+RATE_LIMIT_AUTH_MAX=10
+CORS_ORIGINS=            # comma-separated; kosong = allow all (dev only)
+TRUST_PROXY=1
+REDIS_URL=               # opsional; kosong = in-memory cache
+CACHE_DEFAULT_TTL_SECONDS=300
+INVENTORY_CACHE_TTL_SECONDS=300
 ```
 Provider disabled → error terkontrol, bukan request eksternal.
 
@@ -205,47 +219,64 @@ Semua test lulus (`npm test`), RLS terbukti (tenant A tidak baca data tenant B),
 | 1.5 Offline/Idempotency | ✅ | Idempotency-Key (header/body) → replay 200 tanpa duplikat, kolom `idempotency_key` + unique index (migrasi 008), race 23505 ditangkap; offline queue IndexedDB menunggu frontend PWA |
 | 1.6 Inventory | ✅ | Tabel inventory + movements, anti-oversell atomic, admin CRUD + adjust + movements, `GET /pos/inventory/availability` |
 | 1.7 Dashboard & Reporting | ✅ | Dashboard today + reports daily/weekly/monthly, timezone Asia/Jakarta, isolasi RLS teruji |
-| 2.1 Advanced Analytics | ⬜ | Belum — lihat bagian 6 |
+| 2.1 Advanced Analytics | ✅ | View `v_daily_sales` (security_invoker), 4 endpoint admin (sales-by-product, margin, slow-moving, turnover), migrasi 010, 8 test — **tanpa matview+refresh (view live, RLS berlaku otomatis)** |
 | 2.2 HR & Staff | ✅ | Shift CRUD + overlap check, clock in/out auto-link shift, staff performance dari transaksi, komisi MVP idempotent (rate per staff), migrasi 009, 14 test |
-| Phase 2 (sisa: 2.1 Analytics) | ⬜ | Belum |
-| Phase 3 (Omnichannel & Accounting) | ⬜ | Belum |
+| Phase 2 (2.1 Analytics + 2.2 HR) | ✅ | Kedua sub-phase selesai |
+| 3.1 E-Commerce Connector | ✅ | Tabel connections/orders/order_items (migrasi 011), adapter pattern (dummy aktif, tokopedia/shopee/woocommerce placeholder), CRUD connections, sync orders, push inventory, fulfill + tracking, 19 test — RLS cross-merchant teruji |
+| 3.2 Click & Collect | ✅ | Reserve hold stok (cnc_reserve), pickup_code unik, verify by code, cancel/expire restock, migrasi 012+012b, 13 test |
+| 3.3 Accounting | ✅ | Journal harian balance (DR=CR), GL mapping 1000/2100/4100/5100/1300, tax invoice PPN 11%, issue faktur_pajak_number, dummy provider sync, migrasi 013, 18 test |
+| Phase 3 (3.1 + 3.2 + 3.3) | ✅ | Semua sub-phase selesai |
+| Phase 4.2 Monitoring & Rate Limiting | ✅ | Rate limit in-memory (global 100 req/menit, /auth 10 req/menit, skip di test), `X-Request-Id` tracing, metrics middleware + `GET /metrics` (counters HTTP/payment/webhook, latency p50/p95/p99 per route, status buckets, payment_success_rate), pino-http dengan request id |
+| Phase 4.3 Security & Cache | ✅ | CORS allowlist via `CORS_ORIGINS` (comma-separated; kosong = allow all dev-only), helmet hardening (CSP off untuk JSON API), trust proxy (`TRUST_PROXY`), express.json limit 1mb, cache layer (`config/cache.js`) — Redis opsional via `REDIS_URL` dengan fallback in-memory TTL; inventory availability di-cache per-SKU + invalidasi saat stok berubah (sale/adjust/return), audit logging payment events sudah ada dari Phase 1.3 |
+| Phase 4 (4.2 + 4.3) | ✅ | Kedua sub-phase selesai — 162/162 test hijau (termasuk `phase-4-hardening.test.js` 17 test) |
+| Phase 4.1 Cloud Deployment | ⬜ | AWS + Terraform + CI/CD — butuh akun AWS |
+| Frontend UI Alignment (vs prototype referensi) | ✅ | CSS design system disamakan dengan `"Warung Kapur, prototype kasir, admin, dan pelanggan QR.html"`: `tokens.css` (glow/overlay vars), `chalk.css` (font 18px/1.35, chalk dust body::before/after z-80, .box::before frame, .btn system + fill/on), `layout.css` full port (frame kasir 12px solid / admin 14px double / cust 6px; shell/side/hdr/kasir/ticket/grid/card/qty/olist/ocard/tbl/stats4/twocol/panel/chart/rank/tgrid/tcard/overlay/dialog/toast/login roles+pinpanel/cust chdr+cchips+clist+mrow+cbar+sheet+track). Shell.tsx restructure ke `.frame > .shell > .side + .main > .hdr + .page > .content`. Header.tsx (ptitle grain, clock, stamp box dbl, theme/photo toggle). Button.tsx (variant+radius+active→btn fill/small/link box r2/r3 on). KasirPage→kasir grid + toolbar search + mbar mobile. OrderPanel→ticket/t-head/items/line/sum/total. MenuGrid→grid/card/qty/nm/pr. KasirSidebar/AdminSidebar→side/sbrand/snav/navi/bdg/sscroll/stitle/ts/sfoot. IncomingOrders→olist/ocard/ofoot/oact + StatusChip/PaymentChip. Riwayat→sumrow+tbl. PayModal→methods/due/recv/quick/keys/change/qrbox. Receipt→overlay/dialog/slip. Login→loginwrap/roles/rolecard/pinpanel/dots/keys. CustomerMenu→frame cust/chdr/cwrap/cchips/clist/mrow/cbar. CartSheet→sheetwrap/sheet/cline/noteinp/paypref. OrderStatus→ostat/track/dot. Admin pages→stats4/twocol/panel/chart/rank, pagehead/tbl, catrow/addrow, tgrid/tcard, sumrow+chips. print.css: @page A6, .pcard, .receipt-print 80mm. index.html: hatch pattern + grain seed params. Build bersih (tsc+vite, 96 modules, ~357 kB). |
 
-**Catatan status**: backend-only (Express 5 + PostgreSQL RLS), belum ada frontend/PWA. **Phase 1 (1.1–1.7) 100% selesai. Phase 2.2 selesai.** Test hijau semua: 87/87 (`tests/phase-1-1`, `phase-1-4`, `phase-1-5`, `phase-1-6`, `phase-1-7`, `phase-2-2.test.js`).
+**Catatan status**: backend-only (Express 5 + PostgreSQL RLS), frontend PWA "Warung Kapur" (Tahap 1–5 + UI Alignment vs prototype referensi) selesai sebagai prototype standalone localStorage. **Backend Phase 1–3 100%, Phase 4.2–4.3 (hardening) 100%, Frontend UI Alignment 100%.** Test hijau semua: 162/162 (`phase-1-1`, `phase-1-4`, `phase-1-5`, `phase-1-6`, `phase-1-7`, `phase-2-1`, `phase-2-2`, `phase-3-1`, `phase-3-2`, `phase-3-3`, `phase-4-hardening.test.js`).
+
+**Catatan status**: backend-only (Express 5 + PostgreSQL RLS), frontend PWA "Warung Kapur" (Tahap 1–5) selesai sebagai prototype standalone localStorage. **Backend Phase 1–3 100%, Phase 4.2–4.3 (hardening) 100%.** Test hijau semua: 162/162 (`phase-1-1`, `phase-1-4`, `phase-1-5`, `phase-1-6`, `phase-1-7`, `phase-2-1`, `phase-2-2`, `phase-3-1`, `phase-3-2`, `phase-3-3`, `phase-4-hardening.test.js`).
 
 ---
 
 ## 6. RENCANA BERIKUTNYA
 
-### Fase selanjutnya: Phase 2.1 Advanced Analytics (tanpa warehouse eksternal — pendekatan DB-native)
+### Status: Backend Phase 1–4.3 SELESAI (162/162 test hijau) + Frontend PWA prototype SELESAI
 
-**Keputusan desain**:
-- **Tanpa BigQuery/Snowflake dulu** — semua agregat dilakukan di PostgreSQL (sudah cukup untuk skala MVP; warehouse eksternal ditunda sampai ada kebutuhan nyata)
-- **Materialized view** `mv_daily_sales` (merchant_id, day, product_name/sku, quantity, revenue, unit_cost_est) sebagai pre-aggregate cepat; refresh manual via endpoint admin (cron menyusul)
-- **Margin**: `transactions_items.line_total - quantity * COALESCE(inventory.unit_cost, 0)` — inventory.unit_cost sudah ada (nullable → margin pakai null-safe, tandai `has_cost`)
-- **Slow-moving**: SKU di inventory tanpa penjualan N hari (default 30)
-- **Turnover ratio**: COGS période / average stock — MVP: approximasi dari quantity terjual vs rata-rata quantity (snapshot stok saat ini; historical stock belum ada → tandai estimasi)
+Backend POS Hybrid sudah fungsional penuh + hardened:
+- **Phase 1**: Auth/multi-tenancy, transaksi POS, payment gateway (Stripe/Xendit/QRIS/Dummy), receipt printing, idempotency/offline, inventory, dashboard/reports
+- **Phase 2**: Advanced analytics (view live + margin/slow-moving/turnover), HR & staff (shift, clock, komisi)
+- **Phase 3**: E-commerce connector (dummy adapter, orders sync, fulfill), click & collect (reserve/verify/expire), accounting (journal harian balance, tax invoice PPN, GL mapping, dummy provider sync)
+- **Phase 4.2–4.3 (Hardening)**: Rate limiting (global 100/menit, auth 10/menit), CORS allowlist, request-id tracing, metrics endpoint (`GET /metrics` — latency p50/p95/p99, error rate, payment success rate), cache layer (Redis opsional / in-memory fallback), inventory availability caching + invalidation, helmet hardening, trust proxy, express body limit
 
-**Langkah implementasi:**
-1. Migrasi `010_analytics.sql`:
-   - `CREATE MATERIALIZED VIEW mv_daily_sales AS` agregat per merchant×day×sku dari transactions+items (hanya status completed)
-   - unique index `(merchant_id, day, sku)` di view untuk REFRESH CONCURRENTLY
-   - (opsional nanti) tabel `analytics_snapshots` untuk historikal turnover
-2. Endpoints (admin):
-   - `POST /admin/analytics/refresh` — REFRESH MATERIALIZED VIEW CONCURRENTLY
-   - `GET /admin/analytics/sales-by-product?from=&to=&limit=` — dari mv_daily_sales
-   - `GET /admin/analytics/margin?from=&to=&limit=` — revenue, est. COGS, est. margin % per produk
-   - `GET /admin/analytics/slow-moving?days=30` — inventory tanpa penjualan N hari
-   - `GET /admin/analytics/turnover?from=&to=` — ratio estimasi per produk
-3. Files: `analytics.repository.js`, `analytics.service.js`, `analytics.schema.js`, `analytics.controller.js`, routes di `admin.routes.js`, `tests/phase-2-1.test.js` (merchant khusus + seed transaksi + assert angka margin/slow-moving)
-4. DoD 2.1: semua laporan akurat vs data mentah, refresh view jalan, RLS teruji (view pakai `WHERE merchant_id` + security_invoker bila memungkinkan — cek PG16 support), `npm test` hijau, update PLAN.md
+Frontend PWA "Warung Kapur" (Tahap 1–5 UI-UX_Plan.md): prototype standalone localStorage, tema papan tulis kapur, 3 tampilan (Kasir/Admin/Pelanggan via QR meja), build bersih.
 
-### Setelah itu: Phase 3 (ringkas)
-1. **3.1 E-Commerce**: connector Tokopedia/Shopee/WooCommerce — pull orders (polling + webhook), inventory sync real-time
-2. **3.2 Click & Collect**: order online → reserve inventory 24 jam → pickup QR
-3. **3.3 Accounting**: sync harian Xero/MYOB/QuickBooks, GL mapping, e-Faktur PPN
+### Fase selanjutnya (pilihan — diskusikan dengan user):
 
-### Backlog frontend (di luar backend phases)
-- PWA kasir (offline queue IndexedDB — pelengkap client dari idempotency 1.5), print receipt dari browser (pakai endpoint escpos/text), dashboard UI, HR UI (shift, clock, komisi)
+**Opsi A: Phase 4.1 Cloud Deployment (AWS + Terraform + CI/CD)**
+- Dockerize app, ECS Fargate, RDS PostgreSQL, ElastiCache Redis, S3
+- Terraform IaC, GitHub Actions (test per PR, staging auto, prod manual approval)
+- Blue-green deployment
+- Butuh: akun AWS, domain, DNS
+
+**Opsi B: Integrasi Frontend PWA ↔ Backend API**
+- Ganti localStorage → fetch ke backend API (login, transaksi, inventory, orders QR)
+- Offline queue IndexedDB (pelengkap idempotency 1.5) + sync saat online
+- Print receipt dari browser via endpoint `/pos/transactions/:id/receipt` (escpos/text)
+- Wire halaman Kasir/Admin/Pelanggan ke data real (hapus seed hardcoded)
+- Sinkronisasi real-time antar tab via SSE/WebSocket (ganti BroadcastChannel)
+
+**Opsi D: Real Marketplace Adapters**
+- Implementasi nyata Tokopedia/Shopee/WooCommerce adapters (butuh API credentials masing-masing)
+- Implementasi nyata Xero/MYOB/QuickBooks accounting adapters (butuh API credentials)
+
+**Opsi E: Testing & CI Enhancement**
+- E2E tests (Playwright) untuk flow kritis: login → transaksi → bayar → struk; QR meja → pesanan → status
+- Coverage target: unit 80%, integration 60%
+- GitHub Actions CI: lint + test per PR, coverage report
+
+### Aturan update dokumentasi
+- Setiap selesai 1 phase: perbarui tabel **PROGRESS** (bagian 5) + ringkasan implementasi di bagian 3 + tulis rencana phase berikutnya di **bagian 6** (pindahkan rencana yang sudah dieksekusi ke ringkasan implementasi aktual di bagian 3 / hapus dari "berikutnya").
+- Jangan membuat file plan baru; dokumen ini living document.
 
 ### Aturan update dokumentasi
 - Setiap selesai 1 phase: perbarui tabel **PROGRESS** (bagian 5) + ringkasan implementasi di bagian 3 + tulis rencana phase berikutnya di **bagian 6** (pindahkan rencana yang sudah dieksekusi ke ringkasan implementasi aktual di bagian 3 / hapus dari "berikutnya").

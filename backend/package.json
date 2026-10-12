@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
-    "test": "node --test tests/",
-    "seed-dev": "node src/scripts/seed-dev.js",
-    "provision-merchant": "node src/scripts/provision-merchant.js"
+    "dev": "NODE_ENV=development nodemon src/server.js",
+    "start": "NODE_ENV=production node src/server.js",
+    "test": "NODE_ENV=test node --test --test-force-exit tests/",
+    "seed-dev": "NODE_ENV=development node src/scripts/seed-dev.js",
+    "provision-merchant": "NODE_ENV=development node src/scripts/provision-merchant.js"
   },
   "keywords": [],
   "author": "",

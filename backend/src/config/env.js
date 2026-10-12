@@ -47,6 +47,16 @@ const envSchema = z.object({
   QRIS_PROVIDER: z.enum(["xendit"]).default("xendit"),
   PAYMENT_MODE: z.enum(["dummy", "live"]).default("dummy"),
   DUMMY_PAYMENT_WEBHOOK_SECRET: z.string().min(8).default("dummy-development-secret"),
+
+  // ---- Production Hardening (Phase 4.2–4.3) ----
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).default(60_000),
+  RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(100),
+  RATE_LIMIT_AUTH_MAX: z.coerce.number().int().min(1).default(10),
+  CORS_ORIGINS: z.string().optional(), // comma-separated; kosong = allow all (dev)
+  TRUST_PROXY: z.coerce.number().int().min(0).default(1),
+  REDIS_URL: z.string().url().optional(),
+  CACHE_DEFAULT_TTL_SECONDS: z.coerce.number().int().min(0).default(300),
+  INVENTORY_CACHE_TTL_SECONDS: z.coerce.number().int().min(0).default(300),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -5,6 +5,7 @@ const paymentRepository = require("../repositories/payment.repository");
 const { getPaymentAdapter } = require("../payments/payment-factory");
 const { logAuthEvent } = require("./auth.service");
 const inventoryService = require("./inventory.service");
+const metrics = require("./metrics.service");
 const paymentAudit = (eventType, payment, metadata = {}) => logAuthEvent({
   eventType,
   userId: payment?.created_by,
@@ -40,6 +41,7 @@ async function createPayment({ merchantId, transactionId, provider, paymentMetho
     const payment = await paymentRepository.create(client, { merchantId, transactionId, provider: effectiveProvider, paymentMethod, amount: external.amount, currency: external.currency, providerPaymentId: external.providerPaymentId, providerReference: external.providerReference, checkoutUrl: external.checkoutUrl, expiresAt: external.expiresAt, metadata: { mode: env.PAYMENT_MODE } });
     await client.query(`UPDATE transactions SET payment_status = 'pending', payment_provider = $1, payment_reference = $2, updated_at = NOW() WHERE id = $3 AND merchant_id = $4`, [effectiveProvider, external.providerReference || external.providerPaymentId, transactionId, merchantId]);
     await paymentAudit("payment_created", payment);
+    metrics.increment("payment_created_total");
     return payment;
   });
 }
@@ -58,6 +60,7 @@ async function cancelPayment({ merchantId, paymentId }) {
     const updated = await paymentRepository.updateStatus(client, payment.id, "failed");
     await client.query(`UPDATE transactions SET payment_status = 'failed', updated_at = NOW() WHERE id = $1`, [payment.transaction_id]);
     await paymentAudit("payment_failed", updated);
+    metrics.increment("payment_failed_total");
     return updated;
   });
 }
@@ -87,6 +90,7 @@ async function refundPayment({ merchantId, paymentId, amount }) {
     }
 
     await paymentAudit("payment_refunded", updated);
+    metrics.increment("payment_refunded_total");
     return updated;
   });
 }
@@ -106,6 +110,7 @@ async function handleWebhook({ provider, rawBody, headers, skipVerification = fa
   const adapter = getPaymentAdapter(provider);
   if (!skipVerification && !adapter.verifyWebhook({ rawBody, headers })) {
     await paymentAudit("payment_webhook_rejected", null, { provider });
+    metrics.increment("webhook_rejected_total");
     throw new PaymentError("Invalid webhook signature", 401);
   }
   let normalized;
@@ -124,6 +129,10 @@ async function handleWebhook({ provider, rawBody, headers, skipVerification = fa
     await paymentRepository.updateStatus(client, paymentMatch.id, normalized.status);
     await paymentRepository.completeWebhook(client, normalized.eventId, provider, normalized.status, paymentMatch.id, paymentMatch.transaction_id, normalized.reference);
     await paymentAudit(normalized.status === "paid" ? "payment_completed" : `payment_${normalized.status}`, paymentMatch, { event_id: normalized.eventId });
+    metrics.increment("webhook_processed_total");
+    if (normalized.status === "paid") metrics.increment("payment_paid_total");
+    else if (normalized.status === "failed") metrics.increment("payment_failed_total");
+    else if (normalized.status === "expired") metrics.increment("payment_expired_total");
     return { duplicate: false, status: normalized.status, paymentId: paymentMatch.id };
   });
 }

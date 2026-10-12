@@ -1,0 +1,74 @@
+/* print.css — cetak kartu meja A6 & struk (sesuai prototype) */
+.print-cards { display: none; }
+
+@media print {
+  @page {
+    size: A6;
+    margin: 8mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    height: auto;
+  }
+  body::before,
+  body::after,
+  #root,
+  .toast,
+  .overlay {
+    display: none !important;
+  }
+  .print-cards {
+    display: block;
+  }
+  .pcard {
+    page-break-after: always;
+    text-align: center;
+    color: #000;
+    font-family: "Patrick Hand", cursive;
+    padding: 4mm;
+  }
+  .pcard:last-child {
+    page-break-after: auto;
+  }
+  .pcard h2 {
+    font-family: "Caveat Brush", cursive;
+    font-weight: 400;
+    font-size: 26pt;
+    margin: 0 0 6mm;
+  }
+  .pcard h3 {
+    font-family: "Caveat Brush", cursive;
+    font-weight: 400;
+    font-size: 34pt;
+    margin: 6mm 0 2mm;
+  }
+  .pcard p {
+    font-size: 14pt;
+    margin: 0;
+  }
+  .pcard .qr {
+    width: 70mm;
+    height: 70mm;
+    margin: 0 auto;
+    color: #000;
+  }
+
+  /* struk 80mm */
+  .receipt-print {
+    border: none !important;
+    background: #fff !important;
+    color: #000 !important;
+    max-width: 80mm !important;
+    width: 80mm !important;
+    box-shadow: none !important;
+    padding: 8px !important;
+  }
+  .receipt-print * {
+    color: #000 !important;
+    text-shadow: none !important;
+    border-color: #000 !important;
+    filter: none !important;
+  }
+}

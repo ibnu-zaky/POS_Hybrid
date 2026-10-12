@@ -6,6 +6,9 @@ const controller = require("../controllers/admin.controller");
 const inventoryController = require("../controllers/inventory.controller");
 const hrController = require("../controllers/hr.controller");
 const analyticsController = require("../controllers/analytics.controller");
+const ecommerceController = require("../controllers/ecommerce.controller");
+const cncController = require("../controllers/click-and-collect.controller");
+const accountingController = require("../controllers/accounting.controller");
 
 const router = express.Router();
 router.use(authenticate, tenantContext, authorize(["admin"]));
@@ -41,5 +44,35 @@ router.get("/analytics/sales-by-product", analyticsController.salesByProduct);
 router.get("/analytics/margin", analyticsController.margin);
 router.get("/analytics/slow-moving", analyticsController.slowMoving);
 router.get("/analytics/turnover", analyticsController.turnover);
+
+router.get("/ecommerce/connections", ecommerceController.listConnections);
+router.post("/ecommerce/connections", ecommerceController.createConnection);
+router.patch("/ecommerce/connections/:id", ecommerceController.updateConnection);
+router.delete("/ecommerce/connections/:id", ecommerceController.deleteConnection);
+router.post("/ecommerce/connections/:id/sync", ecommerceController.syncOrders);
+router.post("/ecommerce/connections/:id/push-inventory", ecommerceController.pushInventory);
+router.get("/ecommerce/orders", ecommerceController.listOrders);
+router.get("/ecommerce/orders/:id", ecommerceController.getOrder);
+router.patch("/ecommerce/orders/:id/fulfill", ecommerceController.fulfillOrder);
+
+router.get("/click-and-collect", cncController.listReservations);
+router.post("/click-and-collect", cncController.createReservation);
+router.get("/click-and-collect/:id", cncController.getReservation);
+router.post("/click-and-collect/verify", cncController.verifyPickup);
+router.post("/click-and-collect/:id/cancel", cncController.cancelReservation);
+router.post("/click-and-collect/expire", cncController.expireReservations);
+
+router.get("/accounting/connections", accountingController.listConnections);
+router.post("/accounting/connections", accountingController.createConnection);
+router.patch("/accounting/connections/:id", accountingController.updateConnection);
+router.delete("/accounting/connections/:id", accountingController.deleteConnection);
+router.post("/accounting/connections/:id/sync", accountingController.syncJournal);
+router.post("/accounting/journal/daily", accountingController.generateDailyJournal);
+router.get("/accounting/journal", accountingController.listJournal);
+router.get("/accounting/journal/:id", accountingController.getJournal);
+router.post("/accounting/journal/:id/post", accountingController.postJournal);
+router.post("/accounting/tax-invoices", accountingController.createTaxInvoice);
+router.get("/accounting/tax-invoices", accountingController.listTaxInvoices);
+router.post("/accounting/tax-invoices/:id/issue", accountingController.issueTaxInvoice);
 
 module.exports = router;
