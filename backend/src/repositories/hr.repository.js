@@ -222,6 +222,7 @@ async function staffPerformance(client, { merchantId, fromIso, toIso }) {
      LEFT JOIN transactions t
        ON t.staff_id = st.id
       AND t.status = 'completed'
+      AND t.payment_status = 'paid'
       AND t.created_at >= $2::timestamptz
       AND t.created_at < $3::timestamptz
      WHERE st.merchant_id = $1 AND st.is_active = TRUE
@@ -293,6 +294,7 @@ async function dailySalesPerStaff(client, { merchantId, fromIso, toIso }) {
      FROM transactions
      WHERE merchant_id = $1
        AND status = 'completed'
+       AND payment_status = 'paid'
        AND created_at >= $2::timestamptz
        AND created_at < $3::timestamptz
      GROUP BY staff_id`,

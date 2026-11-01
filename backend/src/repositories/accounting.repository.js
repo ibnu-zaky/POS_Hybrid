@@ -182,6 +182,7 @@ async function aggregateDailySales(client, { merchantId, date }) {
      LEFT JOIN inventory i ON i.merchant_id = t.merchant_id AND i.sku = ti.sku
      WHERE t.merchant_id = $1
        AND t.status = 'completed'
+       AND t.payment_status = 'paid'
        AND (t.created_at AT TIME ZONE 'Asia/Jakarta')::date = $2::date`,
     [merchantId, date],
   );

@@ -52,6 +52,8 @@ const envSchema = z.object({
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).default(60_000),
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(100),
   RATE_LIMIT_AUTH_MAX: z.coerce.number().int().min(1).default(10),
+  RATE_LIMIT_PUBLIC_MAX: z.coerce.number().int().min(1).default(10),
+  RATE_LIMIT_PIN_MAX: z.coerce.number().int().min(1).default(5),
   CORS_ORIGINS: z.string().optional(), // comma-separated; kosong = allow all (dev)
   TRUST_PROXY: z.coerce.number().int().min(0).default(1),
   REDIS_URL: z.string().url().optional(),

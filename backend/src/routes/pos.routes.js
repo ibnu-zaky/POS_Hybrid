@@ -1,13 +1,14 @@
 const express = require("express");
 
 const authenticate = require("../middleware/authenticate");
-const tenantContext = require("../middleware/tenant-context");
 const authorize = require("../middleware/authorize");
 const transactionService = require("../services/transaction.service");
 const inventoryService = require("../services/inventory.service");
 const receiptService = require("../services/receipt.service");
 const reportsService = require("../services/reports.service");
 const hrService = require("../services/hr.service");
+const categoriesController = require("../controllers/categories.controller");
+const menuItemsController = require("../controllers/menu-items.controller");
 const { clockSchema } = require("../schemas/hr.schema");
 const {
   dashboardQuerySchema,
@@ -15,11 +16,12 @@ const {
   weeklyQuerySchema,
   monthlyQuerySchema,
 } = require("../schemas/reports.schema");
+const { paginationSchema } = require("../schemas/pagination.schema");
 const { createTransactionSchema, updateTransactionSchema } = require("../schemas/pos.schema");
 
 const router = express.Router();
 
-router.use(authenticate, tenantContext);
+router.use(authenticate);
 
 router.get("/health", authorize(["admin", "manager", "cashier", "integration"]), (_request, response) => {
   response.json({ status: "ok", module: "pos" });
@@ -27,8 +29,7 @@ router.get("/health", authorize(["admin", "manager", "cashier", "integration"]),
 
 router.get("/transactions", authorize(["admin", "manager", "cashier", "integration"]), async (request, response, next) => {
   try {
-    const limit = Number(request.query.limit || 20);
-    const offset = Number(request.query.offset || 0);
+    const { limit, offset } = paginationSchema.parse(request.query);
     const merchantId = request.auth.merchant_id;
 
     const result = await transactionService.listTransactions({ merchantId, limit, offset });
@@ -105,6 +106,35 @@ router.delete("/transactions/:id", authorize(["admin", "manager"]), async (reque
     });
 
     response.status(200).json({ data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ----------------------------------------------------
+// Fase E: Alur kasir (orders) — status, bayar manual, SSE
+// ----------------------------------------------------
+const ordersController = require("../controllers/orders.controller");
+
+router.get("/orders", authorize(["admin", "manager", "cashier"]), async (request, response, next) => {
+  try {
+    const data = await ordersController.listOrders(request, response, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/orders/:id/status", authorize(["admin", "manager", "cashier"]), async (request, response, next) => {
+  try {
+    const data = await ordersController.updateFulfillmentStatus(request, response, next);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/orders/:id/pay", authorize(["admin", "manager", "cashier"]), async (request, response, next) => {
+  try {
+    const data = await ordersController.manualPay(request, response, next);
   } catch (error) {
     next(error);
   }
@@ -243,10 +273,18 @@ router.get("/inventory/availability", authorize(["admin", "manager", "cashier", 
       merchantId: request.auth.merchant_id,
       skus,
     });
+
     response.status(200).json({ data });
   } catch (error) {
     next(error);
   }
 });
+
+const ordersStreamController = require("../controllers/orders-stream.controller");
+
+router.get("/orders/stream", authorize(["admin", "manager", "cashier"]), ordersStreamController.getOrderStream);
+
+router.get("/menu", authorize(["admin", "manager", "cashier", "integration"]), categoriesController.getCashierMenu);
+router.patch("/menu-items/:id/availability", authorize(["admin", "manager", "cashier"]), menuItemsController.setAvailability);
 
 module.exports = router;

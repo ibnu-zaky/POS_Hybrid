@@ -1,4 +1,5 @@
 // components/ui/Header.tsx
+import { useEffect, useState } from "react";
 import { useCurrentDate } from "../../hooks/useCurrentDate";
 
 type Role = "kasir" | "admin" | "pelanggan";
@@ -9,22 +10,45 @@ type Props = {
   onToggleCollapse?: () => void;
 };
 
+function getStoredTheme(): "dark" | "light" {
+  try {
+    const theme = localStorage.getItem("wk-theme");
+    return theme === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
+
+function getStoredPhoto(): "bw" | "color" {
+  try {
+    const photo = localStorage.getItem("wk-photo");
+    return photo === "color" ? "color" : "bw";
+  } catch {
+    return "bw";
+  }
+}
+
 export function Header({ role, onToggleCollapse }: Props) {
   const now = useCurrentDate();
+  const [theme, setTheme] = useState<"dark" | "light">(() => getStoredTheme());
+  const [photo, setPhoto] = useState<"bw" | "color">(() => getStoredPhoto());
 
-  const theme = document.documentElement.getAttribute("data-theme") || "dark";
-  const photo = document.documentElement.getAttribute("data-photo") || "bw";
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try { localStorage.setItem("wk-theme", theme); } catch { /* ignore */ }
+  }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-photo", photo);
+    try { localStorage.setItem("wk-photo", photo); } catch { /* ignore */ }
+  }, [photo]);
 
   function toggleTheme() {
-    const next = theme === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    try { localStorage.setItem("wk-theme", next); } catch { /* ignore */ }
+    setTheme((current) => (current === "dark" ? "light" : "dark"));
   }
 
   function togglePhoto() {
-    const next = photo === "bw" ? "color" : "bw";
-    document.documentElement.setAttribute("data-photo", next);
-    try { localStorage.setItem("wk-photo", next); } catch { /* ignore */ }
+    setPhoto((current) => (current === "bw" ? "color" : "bw"));
   }
 
   return (

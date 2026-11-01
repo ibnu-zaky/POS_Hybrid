@@ -81,10 +81,15 @@ test("idempotency: create pertama dengan header key → 201 + stok terpotong", a
 });
 
 test("idempotency: retry key sama → 200, transaksi sama, stok tidak dipotong lagi", async () => {
-  const before = await request
-    .get("/pos/transactions")
-    .set("Authorization", `Bearer ${accessToken}`)
-    .then((r) => r.body.meta.total);
+  // Hitung hanya transaksi dengan key ini — total semua transaksi tenant bisa
+  // berubah karena test file lain yang paralel memakai tenant yang sama.
+  const countWithKey = async (key) =>
+    request
+      .get("/pos/transactions?limit=100")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .then((r) => r.body.data.filter((t) => t.idempotency_key === key).length);
+
+  const before = await countWithKey(KEY_HEADER);
 
   const res = await request
     .post("/pos/transactions")
@@ -100,12 +105,10 @@ test("idempotency: retry key sama → 200, transaksi sama, stok tidak dipotong l
   assert.ok(res.body.data.id, "data transaksi ikut dikembalikan");
   assert.equal(res.body.data.items.length, 1, "items ikut dikembalikan");
 
-  const after = await request
-    .get("/pos/transactions")
-    .set("Authorization", `Bearer ${accessToken}`)
-    .then((r) => r.body.meta.total);
+  const after = await countWithKey(KEY_HEADER);
 
-  assert.equal(after, before, "total transaksi tidak bertambah (tidak dobel)");
+  assert.equal(after, before, "jumlah transaksi dengan key tidak bertambah (tidak dobel)");
+  assert.ok(after >= 1, "transaksi asli dengan key tetap ada");
   assert.equal(await getQuantity(SKU), 7, "stok tidak dipotong dua kali");
 });
 

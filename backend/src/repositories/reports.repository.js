@@ -3,6 +3,7 @@
 const RANGE_WHERE = `
   WHERE t.merchant_id = $1
     AND t.status = 'completed'
+    AND t.payment_status = 'paid'
     AND t.created_at >= $2::timestamptz
     AND t.created_at < $3::timestamptz`;
 

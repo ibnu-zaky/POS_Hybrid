@@ -9,6 +9,9 @@ const analyticsController = require("../controllers/analytics.controller");
 const ecommerceController = require("../controllers/ecommerce.controller");
 const cncController = require("../controllers/click-and-collect.controller");
 const accountingController = require("../controllers/accounting.controller");
+const categoriesController = require("../controllers/categories.controller");
+const menuItemsController = require("../controllers/menu-items.controller");
+const tablesController = require("../controllers/tables.controller");
 
 const router = express.Router();
 router.use(authenticate, tenantContext, authorize(["admin"]));
@@ -28,6 +31,25 @@ router.post("/inventory", inventoryController.createInventory);
 router.get("/inventory/movements", inventoryController.listMovements);
 router.patch("/inventory/:id", inventoryController.updateInventory);
 router.post("/inventory/:id/adjust", inventoryController.adjustStock);
+
+// ---- Categories ----
+router.get("/categories", categoriesController.listCategories);
+router.post("/categories", categoriesController.createCategory);
+router.patch("/categories/:id", categoriesController.updateCategory);
+router.delete("/categories/:id", categoriesController.deleteCategory);
+router.post("/categories/reorder", categoriesController.reorderCategories);
+
+// ---- Menu Items ----
+router.get("/menu-items", menuItemsController.listMenuItems);
+router.post("/menu-items", menuItemsController.createMenuItem);
+router.patch("/menu-items/:id", menuItemsController.updateMenuItem);
+router.delete("/menu-items/:id", menuItemsController.deleteMenuItem);
+
+// ---- Dining Tables ----
+router.get("/tables", tablesController.listTables);
+router.post("/tables", tablesController.createTable);
+router.delete("/tables/:id", tablesController.deleteTable);
+router.post("/tables/:id/regenerate-token", tablesController.regenerateToken);
 
 router.get("/hr/shifts", hrController.listShifts);
 router.post("/hr/shifts", hrController.createShift);

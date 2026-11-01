@@ -58,7 +58,7 @@ npm run preview
 ## Menjalankan backend
 
 1. Buat database PostgreSQL untuk aplikasi.
-2. Jalankan semua file `migrations/*.sql` secara berurutan menggunakan role database administrator. Migrasi `001_auth_multitenancy.sql` berisi password placeholder `CHANGE_THIS_PASSWORD` untuk role `pos_app`; ganti dengan password yang kuat sebelum menjalankan migrasi (atau segera ubah role password setelahnya).
+2. Sediakan runner migrasi otomatis via `npm run migrate`. Script menggunakan `ADMIN_DATABASE_URL` atau `DATABASE_URL`, membuat tabel `schema_migrations` jika tidak ada, dan menjalankan semua file `.sql` di direktori `migrations/`, hanya menjalankan file yang belum diterapkan. Runner idempotent dan aman untuk CI/prod.
 3. Siapkan konfigurasi lokal:
 
    ```bash
@@ -68,9 +68,10 @@ npm run preview
    ```
 
 4. Isi `DATABASE_URL` agar menggunakan role aplikasi `pos_app`, lalu ganti `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, dan secret lain dengan nilai lokal yang kuat. Jika membuat merchant lewat script provisioning, atur `ADMIN_DATABASE_URL` ke koneksi database administrator; variabel ini wajib di production untuk script tersebut.
-5. Dari direktori `backend`, jalankan:
+5. Dari direktori `backend`, jalankan migrasi:
 
    ```bash
+   npm run migrate
    npm run seed-dev
    npm run dev
    ```

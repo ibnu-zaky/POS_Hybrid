@@ -432,7 +432,8 @@ test("pos: create transaction berhasil", async () => {
     .set("Authorization", `Bearer ${loginRes.access_token}`)
     .send({
       payment_method: "cash",
-      amount_paid: 100000,
+      // Belum dibayar — pembayaran menyusul via gateway (checkout → webhook → paid).
+      amount_paid: 0,
       items: [
         {
           product_name: "Nasi Goreng",

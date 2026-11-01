@@ -7,7 +7,8 @@
     "start": "NODE_ENV=production node src/server.js",
     "test": "NODE_ENV=test node --test --test-force-exit tests/",
     "seed-dev": "NODE_ENV=development node src/scripts/seed-dev.js",
-    "provision-merchant": "NODE_ENV=development node src/scripts/provision-merchant.js"
+    "provision-merchant": "NODE_ENV=development node src/scripts/provision-merchant.js",
+    "migrate": "NODE_ENV=development node src/scripts/migrate.js"
   },
   "keywords": [],
   "author": "",

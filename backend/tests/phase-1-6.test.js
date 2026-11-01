@@ -243,6 +243,8 @@ test("inventory: refund penuh → movement return +3", async () => {
     .set("Authorization", `Bearer ${accessToken}`)
     .send({
       payment_method: "card",
+      // Belum dibayar — dibayar via gateway (checkout → webhook → paid) untuk uji refund.
+      amount_paid: 0,
       items: [{ sku: SKU_C, product_name: "Item Refund", quantity: 3, unit_price: 10000 }],
     });
   assert.equal(txnRes.status, 201);

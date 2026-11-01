@@ -97,7 +97,7 @@ POS Hybrid adalah platform point-of-sale berbasis subscription untuk retail Indo
 
 ## 3. Roadmap Teknis Lengkap
 
-Stack: **Node.js 20+ / Express 5 / PostgreSQL (RLS multi-tenant)** — backend-only saat ini (frontend PWA belum ada).
+Stack: **Node.js 20+ / Express 5 / PostgreSQL (RLS multi-tenant)** — backend-only awalnya; frontend PWA `frontend/` sudah Vite+React 19 (UI Alignment ✅).
 Alur arsitektur: `Route → Controller → Service → Repository → PostgreSQL` (monolith modular, microservices disiapkan untuk skala).
 
 ### Phase 1: MVP Core POS
@@ -131,6 +131,36 @@ Alur arsitektur: `Route → Controller → Service → Repository → PostgreSQL
 - **4.1 Cloud** ⬜: AWS — CloudFront → ALB → ECS (API/Web) + RDS PostgreSQL + ElastiCache Redis + S3 (receipts) + SQS (jobs) + SNS. IaC Terraform; CI/CD GitHub Actions (test per PR, staging auto, prod manual approval, blue-green).
 - **4.2 Monitoring & Rate Limiting** ✅: Rate limiting in-memory (`middleware/rate-limit.js`, fixed window per IP, global 100 req/menit + /auth 10 req/menit, `X-RateLimit-*` headers, 429 + `Retry-After`; nonaktif di test kecuali `forceInTest`). Request ID tracing (`middleware/request-id.js` — safe regex, `X-Request-Id`). Metrics service (`services/metrics.service.js` — counters HTTP/payment/webhook, latency ring buffer per route → p50/p95/p99, status buckets, `payment_success_rate`). Metrics middleware + `GET /metrics`. Pino-http dengan `genReqId`. Trust proxy (`TRUST_PROXY=1`).
 - **4.3 Security & Cache** ✅: CORS allowlist (`CORS_ORIGINS` comma-separated; kosong = allow all dev-only; origin tanpa header = curl/mobile diizinkan). Helmet (CSP off untuk JSON API). Express body limit 1mb. Cache layer (`config/cache.js`) — Redis opsional via `REDIS_URL` (dynamic require `redis`, fallback in-memory TTL bila koneksi gagal); API `get/set/del/delNamespace`, namespace per fitur. Inventory availability di-cache per-SKU (`inv-avail:{merchant}:{sku}`, TTL `INVENTORY_CACHE_TTL_SECONDS` default 300s) + invalidasi saat stok berubah (sale via `applyStockDeltas`, adjust, return). Audit logging payment events (`paymentAudit` → `auth_audit_logs`) sudah ada sejak Phase 1.3.
+
+### Fase UX (Kafe/Warung) — "Warung Kapur" (A–J)
+
+Target segmen F&B (kafe/warung) dengan alur pelanggan order lewat QR meja. Sumber detail: `plan/PLAN_PERBAIKAN_UIUX.md` (audit + rincian endpoint/schema/test). Ringkasan dan koreksi status di bawah.
+
+**Keputusan desain kunci Fase UX (D1–D7):**
+- **D1 Segmen** = F&B (kafe/warung) → model data `menu_items` (bukan fashion/retail).
+- **D2 Katalog** = `menu_items` terpisah dari `inventory`; tautan opsional via `sku` + flag `track_stock`.
+- **D3 Stok** = dipotong saat kasir **menerima** pesanan (`baru → diterima`), bukan saat pelanggan kirim — spam/pesanan ditolak tidak menggerus stok.
+- **D4 Laporan** = pesanan QR yang belum lunas **tidak** masuk laporan/dashboard (hanya `status='completed'` + `payment_status='paid'`).
+- **D5 Login** = PIN per staff (argon2, lockout 5×/5 menit); admin tetap email + password.
+- **D6 Foto menu** = data-URL kecil (WebP hasil resize klien) di `menu_items.image_url`, tanpa endpoint upload terpisah. `ponytail:` ganti ke adapter S3/local-disk saat Fase 4.1 (AWS) jalan — cukup ubah satu fungsi simpan.
+- **D7 Frontend** = PWA Vite + React (sudah ada di `frontend/`, React 19 + TS + react-router 7 + `qrcode`); storage hanya untuk sesi & tema.
+
+| Fase | Status | Ringkasan implementasi aktual / rencana |
+|------|--------|--------------------------------------|
+| **A. Hardening sisa** | ✅ | CI `.github/workflows/test.yml` (Postgres service + `npm test`), migration runner `npm run migrate` (`migrations/*.sql` urut + tabel `schema_migrations`), error handler diekstrak dari `src/app.js` → `src/utils/api-error.js` + `src/middleware/error-handler.js`, `paginationSchema` Zod terpusat (sekarang limit/offset duplikat per schema), README diperbarui. Test: `tests/ux-0-hardening.test.js` (11 test). (Rate limit, CORS allowlist, helmet, body limit, request-id, metrics **sudah ✅** di 4.2–4.3.) |
+| **B. Katalog menu, kategori, meja** | ✅ | Migrasi **`014_catalog.sql`** + timestamp katalog diselaraskan di `015_orders.sql`: `categories`, `menu_items` (harga rupiah bulat), `dining_tables` (token acak). RLS enable+force, GRANT `pos_app`. Lookup token via `SECURITY DEFINER`. CRUD admin `/categories`, `/menu-items`, `/tables`. `/pos/menu` untuk kasir. Test: `tests/ux-1-catalog.test.js`. |
+| **C. Model pesanan + kalkulasi server** | ✅ | `015_orders.sql` telah diterapkan; snapshot source/meja/fulfillment/diskon/pajak, harga dari katalog, pembulatan rupiah, counter harian atomik, QR draft/unpaid dikecualikan dari laporan. Test `ux-2-orders.test.js` dan regresi dashboard lulus. |
+| **D. API publik pelanggan (QR)** | ✅ | Tanpa JWT, tenant dari token meja terverifikasi. `GET /public/tables/:token/menu`, `POST /public/tables/:token/orders` (wajib `Idempotency-Key` → replay 200), `GET /public/orders/:id?pt=<public_token>`. Zod strict: maks 30 item, qty 1–20, `note` ≤60, `customer_name` ≤24, `payment_pref` (kasir|qris). Rate limit per IP + token meja (`RATE_LIMIT_PUBLIC_MAX`, default 10/menit). Menu `is_available=false` → 409 (via validasi pesanan). Tidak ada endpoint list; respons tidak bocorkan `merchant_id`/data staff. Lookup order via fungsi `SECURITY DEFINER` `lookup_order_by_public_token` (migrasi `016_public_orders.sql`). Test: `tests/ux-3-public.test.js`. |
+| **E. Alur kasir: status, bayar manual, realtime** | ✅ | State machine `fulfillment_status` (transisi di luar aturan → 409; `selesai` hanya bila `payment_status='paid'`). `GET /pos/orders` (filter chip), `PATCH /pos/orders/:id/status` (+`reject_reason`), `POST /pos/orders/:id/pay` (tunai/kartu/qris; hitung kembalian server, 409 bila kurang), `GET /pos/orders/stream` (SSE; fallback polling `?since=`). Stok dipotong saat `baru → diterima` (pakai `FOR UPDATE` yang sudah ada di `inventory.service.js`), dikembalikan bila batal. `qris` masuk CHECK `payment_method` (`017_phase_e_payment_method_qris.sql`); provider `manual` untuk mode kasir. Order QR dibuat lewat `POST /pos/transactions` (source `qr`, `payment_status='unpaid'`), bukan endpoint `/orders` terpisah. |
+| **F. Login PIN + device pairing** | ⬜ | `staff.pin_hash` (argon2), `pin_failed_count`, `pin_locked_until`; `merchants.code` (mis. `warung-kapur`). Pairing sekali: admin (email+password) buat kode → tablet simpan device token. `POST /auth/pin-login` → access+refresh. PIN 4–6 digit, lockout 5×/5 menit, rate limit, audit ke `auth_audit_logs`, PIN tidak pernah di-log. |
+| **G. Pengaturan toko, struk, laporan** | ⬜ | `merchant_settings` (1 baris/merchant): `store_name`, `tax_pct`, `discount_presets`, `payment_mode` (manual|gateway), `qris_static_url`. `GET/PATCH /admin/settings`, `GET /pos/settings` (read-only kasir). Struk: label Indonesia, "Makan di sini, meja N"/"Bawa pulang", "Dipesan lewat QR", waktu Asia/Jakarta `dd/MM/yyyy, HH.mm`, hapus `receipt_url` palsu (isi hanya bila env `RECEIPT_BASE_URL` ada). Laporan: `GET /pos/reports/range` (+`.csv` UTF-8 BOM), `GET /pos/reports/series?days=`; validasi `from ≤ to`, rentang maks 366 hari. |
+| **H. Foto menu (opsional)** | ⬜ | Berubah jadi opsional karena D6: simpan WebP data-URL (resize di klien) via `PATCH /admin/menu-items/:id/image` — tanpa `multer`/`sharp` baru. Naikkan ke upload file+S3 hanya saat 4.1 jalan. Placeholder ikon kategori dipakai bila foto kosong. |
+| **I. Integrasi Frontend ↔ API** | ⬜ | **Dipangkas** — semua layar + CSS design system sudah ✅ (lihat PROGRESS "Frontend UI Alignment"); `frontend/` sudah Vite+React19+TS. Sisa: ganti sumber data `localStorage`+seed → API, tambah loading/error state, offline queue IndexedDB untuk pesanan kasir (pakai `Idempotency-Key`), ganti `BroadcastChannel` → SSE + polling fallback, pesan error ramah pelanggan, cetak struk dari `GET /pos/transactions/:id/receipt`. |
+| **J. QA e2e + rilis** | ⬜ | Skenario penuh (scan → pesan → terima → proses → siap → bayar tunai → selesai → muncul di laporan/struk), penolakan pesanan beralasan, uji rate limit & isolasi tenant endpoint publik, uji tablet landscape/HP portrait/tema gelap-terang, uji offline tanpa duplikat, review keamanan (token meja, `public_token`, lockout PIN, CORS), update PLAN.md + README. |
+
+**Konvensi Fase UX**: Route → Controller → Service → Repository → PostgreSQL; Zod per route; semua query lewat `withTenantContext`; RLS enable+force + policy `*_isolation` + GRANT `pos_app`; tenant selalu dari JWT atau token meja terverifikasi; test per fase `tests/ux-N-*.test.js` (skip bila DB 503, merchant khusus agar aman paralel); tanpa secret di kode/test; jangan log PIN/token/nomor kartu.
+
+**Risiko utama**: perubahan semantik status merusak laporan lama (ditegakkan Fase C = kolom baru, test regresi dashboard/reports/analytics/HR komisi); endpoint publik disalahgunakan (rate limit per IP+meja, token panjang & rotatable, stok tidak dipotong sampai diterima); float pada uang (integer rupiah + satu fungsi kalkulasi); realtime tak stabil di jaringan warung (fallback polling + indikator koneksi).
 
 ### Testing (5.1) — ringkas
 Unit 80% coverage, integration 60%, e2e key flows. Fokus: validasi amount, negative test, sync inventory setelah payment, isolasi tenant.
@@ -180,6 +210,10 @@ Route → Controller → Service → Repository → PostgreSQL
  12. `012_click_and_collect.sql` — click_and_collect_orders
  12b. `012b_cnc_movement_types.sql` — extend inventory_movements type (+cnc_reserve/cnc_cancel/cnc_expire)
  13. `013_accounting.sql` — accounting_connections, journal_entries, journal_lines, tax_invoices
+  14. `014_catalog.sql` — categories, menu_items, dining_tables
+  15. `015_orders.sql` — timestamps katalog, kolom fulfillment/pesanan, order_counters, filter laporan lunas
+  16. `016_public_orders.sql` — `lookup_order_by_public_token(VARCHAR, VARCHAR)` SECURITY DEFINER (status pesanan QR tanpa JWT)
+  17. `017_phase_e_payment_method_qris.sql` — tambah `qris` ke CHECK `payment_method` transaksi
 - Dijalankan dengan **psql postgres superuser**: `psql -d pos_hybrid -f migrations/00X_*.sql` (butuh superuser untuk CREATE ROLE/extension; app connect sebagai `pos_app`).
 
 ### Environment variables utama
@@ -231,56 +265,51 @@ Semua test lulus (`npm test`), RLS terbukti (tenant A tidak baca data tenant B),
 | Phase 4 (4.2 + 4.3) | ✅ | Kedua sub-phase selesai — 162/162 test hijau (termasuk `phase-4-hardening.test.js` 17 test) |
 | Phase 4.1 Cloud Deployment | ⬜ | AWS + Terraform + CI/CD — butuh akun AWS |
 | Frontend UI Alignment (vs prototype referensi) | ✅ | CSS design system disamakan dengan `"Warung Kapur, prototype kasir, admin, dan pelanggan QR.html"`: `tokens.css` (glow/overlay vars), `chalk.css` (font 18px/1.35, chalk dust body::before/after z-80, .box::before frame, .btn system + fill/on), `layout.css` full port (frame kasir 12px solid / admin 14px double / cust 6px; shell/side/hdr/kasir/ticket/grid/card/qty/olist/ocard/tbl/stats4/twocol/panel/chart/rank/tgrid/tcard/overlay/dialog/toast/login roles+pinpanel/cust chdr+cchips+clist+mrow+cbar+sheet+track). Shell.tsx restructure ke `.frame > .shell > .side + .main > .hdr + .page > .content`. Header.tsx (ptitle grain, clock, stamp box dbl, theme/photo toggle). Button.tsx (variant+radius+active→btn fill/small/link box r2/r3 on). KasirPage→kasir grid + toolbar search + mbar mobile. OrderPanel→ticket/t-head/items/line/sum/total. MenuGrid→grid/card/qty/nm/pr. KasirSidebar/AdminSidebar→side/sbrand/snav/navi/bdg/sscroll/stitle/ts/sfoot. IncomingOrders→olist/ocard/ofoot/oact + StatusChip/PaymentChip. Riwayat→sumrow+tbl. PayModal→methods/due/recv/quick/keys/change/qrbox. Receipt→overlay/dialog/slip. Login→loginwrap/roles/rolecard/pinpanel/dots/keys. CustomerMenu→frame cust/chdr/cwrap/cchips/clist/mrow/cbar. CartSheet→sheetwrap/sheet/cline/noteinp/paypref. OrderStatus→ostat/track/dot. Admin pages→stats4/twocol/panel/chart/rank, pagehead/tbl, catrow/addrow, tgrid/tcard, sumrow+chips. print.css: @page A6, .pcard, .receipt-print 80mm. index.html: hatch pattern + grain seed params. Build bersih (tsc+vite, 96 modules, ~357 kB). |
+| Fase UX A (Hardening sisa) | ✅ | CI `.github/workflows/test.yml`, `npm run migrate`, ekstrak error handler, `paginationSchema` Zod terpusat, sinkron PLAN.md, 11 test (`ux-0-hardening.test.js`). |
+| Fase UX B (Katalog menu/kategori/meja) | ✅ | `014_catalog.sql` + timestamp katalog di `015_orders.sql`, CRUD admin + `/pos/menu`, lookup token meja via `SECURITY DEFINER`. 10 test `ux-1-catalog.test.js` lulus. |
+| Fase UX C (Model pesanan + kalkulasi server) | ✅ | `015_orders.sql`, snapshot pesanan/fulfillment, harga dari katalog, pembulatan rupiah, nomor harian atomik, QR draft unpaid dikecualikan dari laporan. 6 test UX-2 dan 9 test regresi laporan lulus. |
+| Fase UX D (API publik pelanggan QR) | ✅ | `/public/tables/:token/*`, `/public/orders/:id?pt=`, rate limit IP+meja, Idempotency wajib, `016_public_orders.sql`. 5 test `ux-3-public.test.js` lulus; suite penuh **194/194** (termasuk perbaikan ekspektasi test phase-1-1/1-6/1-5 terhadap payment_status lunas + race tenant paralel). |
+| Fase UX E (Alur kasir: status/bayar/realtime) | ✅ | State machine dapur, `GET /pos/orders` (filter), `PATCH /pos/orders/:id/status`, `POST /pos/orders/:id/pay` manual, SSE + polling fallback `?since=`, `017_phase_e_payment_method_qris.sql` (tambah `qris`). 12 test `phase-e-orders.test.js` lulus; suite penuh **206/206**. |
+| Fase UX F (Login PIN + device pairing) | ⬜ | `staff.pin_hash` (argon2), lockout, `merchants.code`, `/auth/pin-login` |
+| Fase UX G (Pengaturan toko/struk/laporan) | ⬜ | `merchant_settings`, struk Indonesia + Asia/Jakarta, `reports/range(.csv)` |
+| Fase UX H (Foto menu — opsional) | ⬜ | Data-URL WebP di `image_url` (tanpa upload endpoint baru); S3 saat 4.1 jalan |
+| Fase UX I (Integrasi Frontend ↔ API) | ⬜ | Ganti localStorage → API, loading/error, offline queue, SSE, layar sudah ✅ |
+| Fase UX J (QA e2e + rilis) | ⬜ | Skenario penuh, rate limit, perangkat/tema, offline tanpa duplikat, review keamanan |
 
-**Catatan status**: backend-only (Express 5 + PostgreSQL RLS), frontend PWA "Warung Kapur" (Tahap 1–5 + UI Alignment vs prototype referensi) selesai sebagai prototype standalone localStorage. **Backend Phase 1–3 100%, Phase 4.2–4.3 (hardening) 100%, Frontend UI Alignment 100%.** Test hijau semua: 162/162 (`phase-1-1`, `phase-1-4`, `phase-1-5`, `phase-1-6`, `phase-1-7`, `phase-2-1`, `phase-2-2`, `phase-3-1`, `phase-3-2`, `phase-3-3`, `phase-4-hardening.test.js`).
-
-**Catatan status**: backend-only (Express 5 + PostgreSQL RLS), frontend PWA "Warung Kapur" (Tahap 1–5) selesai sebagai prototype standalone localStorage. **Backend Phase 1–3 100%, Phase 4.2–4.3 (hardening) 100%.** Test hijau semua: 162/162 (`phase-1-1`, `phase-1-4`, `phase-1-5`, `phase-1-6`, `phase-1-7`, `phase-2-1`, `phase-2-2`, `phase-3-1`, `phase-3-2`, `phase-3-3`, `phase-4-hardening.test.js`).
+**Catatan status**: backend-only (Express 5 + PostgreSQL RLS), frontend PWA "Warung Kapur" (Tahap 1–5 + UI Alignment vs prototype referensi) selesai sebagai prototype standalone localStorage. **Backend Phase 1–3 100%, Phase 4.2–4.3 (hardening) 100%, Frontend UI Alignment 100%.** Test hijau semua: **206/206** (`phase-1-1`, `phase-1-4`, `phase-1-5`, `phase-1-6`, `phase-1-7`, `phase-2-1`, `phase-2-2`, `phase-3-1`, `phase-3-2`, `phase-3-3`, `phase-4-hardening.test.js`, `ux-0-hardening.test.js`, `ux-1-catalog.test.js`, `ux-2-orders.test.js`, `ux-3-public.test.js`, `phase-e-orders.test.js`).
 
 ---
 
 ## 6. RENCANA BERIKUTNYA
 
-### Status: Backend Phase 1–4.3 SELESAI (162/162 test hijau) + Frontend PWA prototype SELESAI
+### Status: Backend Phase 1–4.3 SELESAI (162/162 test hijau) + Frontend PWA (UI Alignment) SELESAI + Fase UX A–E SELESAI (206/206 test hijau)
 
-Backend POS Hybrid sudah fungsional penuh + hardened:
-- **Phase 1**: Auth/multi-tenancy, transaksi POS, payment gateway (Stripe/Xendit/QRIS/Dummy), receipt printing, idempotency/offline, inventory, dashboard/reports
-- **Phase 2**: Advanced analytics (view live + margin/slow-moving/turnover), HR & staff (shift, clock, komisi)
-- **Phase 3**: E-commerce connector (dummy adapter, orders sync, fulfill), click & collect (reserve/verify/expire), accounting (journal harian balance, tax invoice PPN, GL mapping, dummy provider sync)
-- **Phase 4.2–4.3 (Hardening)**: Rate limiting (global 100/menit, auth 10/menit), CORS allowlist, request-id tracing, metrics endpoint (`GET /metrics` — latency p50/p95/p99, error rate, payment success rate), cache layer (Redis opsional / in-memory fallback), inventory availability caching + invalidation, helmet hardening, trust proxy, express body limit
+Backend POS Hybrid sudah fungsional penuh + hardened (Phase 1–4.3) + katalog/pesanan/QR/kasir (Fase UX A–E). Frontend PWA `frontend/` (Vite + React 19) sudah selesai UI + CSS design system vs prototype; sisa hubungkan ke backend (Fase I).
 
-Frontend PWA "Warung Kapur" (Tahap 1–5 UI-UX_Plan.md): prototype standalone localStorage, tema papan tulis kapur, 3 tampilan (Kasir/Admin/Pelanggan via QR meja), build bersih.
+Berikutnya: **Fase UX (kafe/warung)** — urutan yang disetujui:
+**A (sisa hardening) → B (katalog) → C (model pesanan) → D+E paralel (API publik + alur kasir) → I (frontend↔API) → F (PIN) → G (settings/struk/laporan) → J (QA)**, sedangkan **H (foto) bersifat opsional/fleksibel**.
 
-### Fase selanjutnya (pilihan — diskusikan dengan user):
+**Status eksekusi**: A ✅, B ✅, C ✅, D ✅, **E ✅ (selesai — 206/206 test hijau)**. Berikutnya: **Fase I (integrasi frontend↔API)** — ganti `localStorage` → API, loading/error, offline queue, SSE. Sisa setelah I: **F (PIN) → G (settings/struk/laporan) → J (QA)**; **H (foto)** opsional.
 
-**Opsi A: Phase 4.1 Cloud Deployment (AWS + Terraform + CI/CD)**
-- Dockerize app, ECS Fargate, RDS PostgreSQL, ElastiCache Redis, S3
-- Terraform IaC, GitHub Actions (test per PR, staging auto, prod manual approval)
-- Blue-green deployment
-- Butuh: akun AWS, domain, DNS
+| No | Fase | Prioritas | Rencana singkat |
+|----|------|-----------|-----------------|
+| 1 | **A. Hardening sisa** | P0 | CI `.github/workflows/test.yml` (Postgres + `npm test`), migration runner `npm run migrate` + `schema_migrations`, error handler → `src/utils/api-error.js` + `src/middleware/error-handler.js`, `paginationSchema` Zod terpusat, README. (Rate limit/CORS/helmet sudah ✅) |
+| 2 | **B. Katalog menu/kategori/meja** | P0 | `014_catalog.sql`, CRUD `/admin/categories` (+reorder), CRUD `/admin/menu-items`, `/pos/menu`, `/admin/tables` + regenerate-token, lookup token via SECURITY DEFINER |
+| 3 | **C. Model pesanan + kalkulasi server** | P0 | `015_orders.sql` (`fulfillment_status`, `source/order_type/table_id/daily_number/discount_pct/tax_pct/public_token`, `order_counters`), price-from-server, kalkulasi integer rupiah, test regresi dashboard/reports/analytics/HR |
+| 4 | **D. API publik pelanggan (QR)** | P0 | ✅ `/public/tables/:token/menu`, `POST /public/tables/:token/orders` (Idempotency wajib), `/public/orders/:id?pt=`, rate limit IP+meja, menu habis → 409 |
+| 5 | **E. Alur kasir** | P0 | ✅ State machine dapur `PATCH /status`, `POST /pay` (tunai/kartu/QRIS manual), SSE + polling fallback, stok dipotong saat diterima |
+| — | **B // C** | — | Urut: B dulu, lalu C. |
+| 6 | **I. Integrasi frontend↔API** | P1 | Ganti `localStorage`+seed → API, loading/error, offline queue IndexedDB, SSE; layar sudah ada |
+| 7 | **F. Login PIN + device pairing** | P1 | `staff.pin_hash`, lockout, `/auth/pin-login` |
+| 8 | **G. Settings/struk/laporan** | P1 | `merchant_settings`, struk Indonesia/Asia-Jakarta, `/pos/reports/range(.csv)` |
+| 9 | **J. QA e2e + rilis** | P1 | Scenario penuh, rate limit, device/tema, offline, review keamanan, update PLAN/README |
+| 10 | **H. Foto menu** | P2 | Opsional sesaat; data-URL WebP di `image_url`. Naikkan ke S3 saat Fase 4.1 jalan |
 
-**Opsi B: Integrasi Frontend PWA ↔ Backend API**
-- Ganti localStorage → fetch ke backend API (login, transaksi, inventory, orders QR)
-- Offline queue IndexedDB (pelengkap idempotency 1.5) + sync saat online
-- Print receipt dari browser via endpoint `/pos/transactions/:id/receipt` (escpos/text)
-- Wire halaman Kasir/Admin/Pelanggan ke data real (hapus seed hardcoded)
-- Sinkronisasi real-time antar tab via SSE/WebSocket (ganti BroadcastChannel)
-
-**Opsi D: Real Marketplace Adapters**
-- Implementasi nyata Tokopedia/Shopee/WooCommerce adapters (butuh API credentials masing-masing)
-- Implementasi nyata Xero/MYOB/QuickBooks accounting adapters (butuh API credentials)
-
-**Opsi E: Testing & CI Enhancement**
-- E2E tests (Playwright) untuk flow kritis: login → transaksi → bayar → struk; QR meja → pesanan → status
-- Coverage target: unit 80%, integration 60%
-- GitHub Actions CI: lint + test per PR, coverage report
+**Paralel yang aman:** Fase F dan H fleksibel — bisa paralel dengan fase lain bila sumber daya ada. Fase I (frontend) dapat dimulai begitu endpoint B/C/D/E mencukupi.
 
 ### Aturan update dokumentasi
-- Setiap selesai 1 phase: perbarui tabel **PROGRESS** (bagian 5) + ringkasan implementasi di bagian 3 + tulis rencana phase berikutnya di **bagian 6** (pindahkan rencana yang sudah dieksekusi ke ringkasan implementasi aktual di bagian 3 / hapus dari "berikutnya").
-- Jangan membuat file plan baru; dokumen ini living document.
-
-### Aturan update dokumentasi
-- Setiap selesai 1 phase: perbarui tabel **PROGRESS** (bagian 5) + ringkasan implementasi di bagian 3 + tulis rencana phase berikutnya di **bagian 6** (pindahkan rencana yang sudah dieksekusi ke ringkasan implementasi aktual di bagian 3 / hapus dari "berikutnya").
-- Jangan membuat file plan baru; dokumen ini living document.
+- Setiap selesai 1 phase: perbarui tabel **PROGRESS** (bagian 5) + ringkasan di bagian 3 + tulis rencana phase berikutnya di **bagian 6** (pindahkan rencana yang sudah dieksekusi ke ringkasan aktual dan hapus dari "berikutnya").
+- Jangan membuat file plan baru; dokumen ini living document — ringkasan Fase UX ada di `plan/PLAN_PERBAIKAN_UIUX.md` (referensi rinci).
 
 ---
 
