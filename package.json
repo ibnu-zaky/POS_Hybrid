@@ -4,6 +4,9 @@
   "private": true,
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "test": "npm test --workspace apps/api"
+    "test": "npm test --workspace apps/api",
+    "lint": "npm run lint --workspace apps/web",
+    "build": "npm run build --workspace apps/web",
+    "typecheck:ratchet": "node scripts/check-typecheck-baseline.js"
   }
 }

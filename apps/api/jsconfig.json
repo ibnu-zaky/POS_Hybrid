@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "commonjs",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "strict": false,
+    "ignoreDeprecations": "6.0",
+    "maxNodeModuleJsDepth": 0,
+    "typeRoots": ["../web/node_modules/@types", "../../node_modules/@types"]
+  },
+  "include": ["src/**/*.js"],
+  "exclude": ["node_modules", "tests"]
+}

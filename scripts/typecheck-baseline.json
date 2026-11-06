@@ -1,0 +1,31 @@
+{
+  "maxErrors": 48,
+  "filesWithErrors": [
+    "src/accounting/dummy-adapter.js",
+    "src/app.js",
+    "src/config/cache.js",
+    "src/controllers/accounting.controller.js",
+    "src/controllers/admin.controller.js",
+    "src/controllers/click-and-collect.controller.js",
+    "src/controllers/ecommerce.controller.js",
+    "src/controllers/payment.controller.js",
+    "src/ecommerce/dummy-adapter.js",
+    "src/middleware/rate-limit.js",
+    "src/payments/dummy.adapter.js",
+    "src/payments/stripe.adapter.js",
+    "src/payments/xendit.adapter.js",
+    "src/repositories/inventory.repository.js",
+    "src/repositories/staff.repository.js",
+    "src/routes/auth.routes.js",
+    "src/services/accounting.service.js",
+    "src/services/auth.service.js",
+    "src/services/click-and-collect.service.js",
+    "src/services/hr.service.js",
+    "src/services/inventory.service.js",
+    "src/services/payment.service.js",
+    "src/services/pin.service.js",
+    "src/services/public.service.js",
+    "src/services/receipt.service.js",
+    "src/services/token.service.js"
+  ]
+}

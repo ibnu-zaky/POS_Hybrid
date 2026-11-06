@@ -7,7 +7,7 @@ on:
     branches: [main, master]
 
 jobs:
-  test:
+  api:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -42,16 +42,84 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Install dependencies
+        working-directory: ${{ github.workspace }}
         run: npm ci
+
+      - name: Setup database role
+        working-directory: ${{ github.workspace }}
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d pos_hybrid -v ON_ERROR_STOP=1 -c "
+            DO \$\$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pos_app') THEN
+                CREATE ROLE pos_app WITH LOGIN PASSWORD 'CHANGE_THIS_PASSWORD' NOSUPERUSER;
+              END IF;
+            END \$\$;
+            GRANT ALL ON SCHEMA public TO pos_app;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO pos_app;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO pos_app;
+          "
 
       - name: Run migrations
         run: npm run migrate
+
+      - name: Grant privileges on migrated tables
+        working-directory: ${{ github.workspace }}
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d pos_hybrid -v ON_ERROR_STOP=1 -c "
+            GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pos_app;
+            GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pos_app;
+          "
 
       - name: Seed development data
         run: npm run seed-dev
 
       - name: Run tests
         run: npm test
+
+      - name: Typecheck ratchet (checkJs)
+        working-directory: ${{ github.workspace }}
+        run: node scripts/check-typecheck-baseline.js
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --workspace apps/web
+
+      - name: Build
+        run: npm run build --workspace apps/web
+
+  core:
+    runs-on: ubuntu-latest
+    # Job ini aktif setelah packages/core ada (Task 8).
+    if: ${{ hashFiles('packages/core/package.json') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck strict
+        run: npx tsc --noEmit -p packages/core
