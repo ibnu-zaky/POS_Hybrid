@@ -115,7 +115,25 @@ backend/       REST API, layanan, adapter, dan tes
 frontend/      UI kasir/admin/pelanggan berbasis React
 migrations/    Migrasi skema PostgreSQL
 plan/          Rencana produk dan teknis
+run-local.sh   Script cepat untuk menjalankan frontend + backend lokal
 ```
+
+## Quick start paling sederhana
+
+Kalau mau langsung jalan tanpa banyak langkah, cukup jalankan dari root repo:
+
+```bash
+chmod +x run-local.sh
+./run-local.sh
+```
+
+Script ini akan:
+- menyalin `.env.example` ke `backend/.env` bila belum ada,
+- install dependency frontend dan backend bila belum ada,
+- menjalankan migrasi dan seed development di backend,
+- menjalankan frontend dan backend secara bersamaan.
+
+Pastikan PostgreSQL sudah aktif dan database `pos_hybrid` sudah dibuat sebelum menjalankan script.
 
 ## Catatan keamanan
 

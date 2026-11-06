@@ -1,4 +1,5 @@
 const { loginSchema, tenantIdSchema } = require("../schemas/auth.schema");
+const { pool } = require("../config/database");
 const authService = require("../services/auth.service");
 
 async function login(request, response, next) {
@@ -88,16 +89,17 @@ async function logout(request, response, next) {
 async function me(request, response, next) {
   try {
     const { sub: staffId, merchant_id: merchantId, role } = request.auth;
+    const db = request.db ?? pool;
 
     const [staffResult, merchantResult] = await Promise.all([
-      request.db.query(
+      db.query(
         `SELECT id, merchant_id, email, name, role, is_active
          FROM staff
          WHERE id = $1 AND merchant_id = $2
          LIMIT 1`,
         [staffId, merchantId],
       ),
-      request.db.query(
+      db.query(
         `SELECT id, name, email, status, subscription_tier
          FROM merchants
          WHERE id = $1

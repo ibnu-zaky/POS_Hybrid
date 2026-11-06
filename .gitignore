@@ -5,3 +5,7 @@
 # The checked-in template is the only environment file allowed.
 !**/.env.example
 *:Zone.Identifier
+
+# Playwright CLI scratch and local worktrees
+.playwright-cli/
+.worktrees/
