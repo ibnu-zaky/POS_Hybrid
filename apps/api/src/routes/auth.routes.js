@@ -3,6 +3,7 @@
 const express = require("express");
 
 const authenticate = require("../middleware/authenticate");
+const tenantContext = require("../middleware/tenant-context");
 const authorize = require("../middleware/authorize");
 const { createRateLimiter } = require("../middleware/rate-limit");
 const env = require("../config/env");
@@ -23,8 +24,8 @@ const pinLimiter = createRateLimiter({
 router.post("/pin-login", pinLimiter, pinController.pinLogin);
 router.post("/login", authController.login);
 router.post("/refresh", authController.refresh);
-router.post("/logout", authenticate, authController.logout);
-router.get("/me", authenticate, authController.me);
+router.post("/logout", authenticate, tenantContext, authController.logout);
+router.get("/me", authenticate, tenantContext, authController.me);
 
 // Device pairing: admin login dulu, lalu buat kode → tablet tukar kode → dapat device_token.
 router.post(

@@ -1,5 +1,5 @@
 const { loginSchema, tenantIdSchema } = require("../schemas/auth.schema");
-const { pool } = require("../config/database");
+const { withTenantContext } = require("../config/database");
 const authService = require("../services/auth.service");
 
 async function login(request, response, next) {
@@ -88,30 +88,24 @@ async function logout(request, response, next) {
 
 async function me(request, response, next) {
   try {
-    console.log("DEBUG /me request.auth:", request.auth);
     const { sub: staffId, merchant_id: merchantId, role } = request.auth;
-    const db = request.db ?? pool;
 
-    const [staffResult, merchantResult] = await Promise.all([
-      db.query(
+    const [staffResult, merchantResult] = await withTenantContext(merchantId, async (client) => Promise.all([
+      client.query(
         `SELECT id, merchant_id, email, name, role, is_active
          FROM staff
          WHERE id = $1 AND merchant_id = $2
          LIMIT 1`,
         [staffId, merchantId],
       ),
-      db.query(
+      client.query(
         `SELECT id, name, email, status, subscription_tier
          FROM merchants
          WHERE id = $1
          LIMIT 1`,
         [merchantId],
       ),
-    ]);
-    console.log("DEBUG /me query results:", {
-        staffCount: staffResult.rowCount,
-        merchantCount: merchantResult.rowCount
-    });
+    ]));
 
     const staff = staffResult.rows[0];
     const merchant = merchantResult.rows[0];

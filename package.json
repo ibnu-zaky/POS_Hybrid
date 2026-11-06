@@ -1,0 +1,9 @@
+{
+  "name": "pos-hybrid-root",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "test": "npm test --workspace apps/api"
+  }
+}

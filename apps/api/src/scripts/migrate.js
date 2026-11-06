@@ -30,7 +30,7 @@ async function getAppliedFilenames(client) {
 
 async function applyMigration(client, filename) {
   const path = require("path");
-  const migrationsDir = path.resolve(__dirname, "../../..", "migrations");
+  const migrationsDir = path.resolve(__dirname, "../../../..", "migrations");
   const fullPath = path.join(migrationsDir, filename);
 
   const sql = require("fs").readFileSync(fullPath, "utf8");
@@ -48,7 +48,7 @@ async function runMigrations() {
     await ensureSchemaMigrationsTable(client);
     const applied = await getAppliedFilenames(client);
 
-    const migrationsDir = require("path").resolve(__dirname, "../../..", "migrations");
+    const migrationsDir = require("path").resolve(__dirname, "../../../..", "migrations");
     const files = require("fs")
       .readdirSync(migrationsDir)
       .filter((f) => f.endsWith(".sql"))

@@ -2,12 +2,12 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FRONTEND_DIR="$ROOT_DIR/frontend"
-BACKEND_DIR="$ROOT_DIR/backend"
+FRONTEND_DIR="$ROOT_DIR/apps/web"
+BACKEND_DIR="$ROOT_DIR/apps/api"
 
 if [[ ! -f "$BACKEND_DIR/.env" ]]; then
   cp "$BACKEND_DIR/.env.example" "$BACKEND_DIR/.env"
-  echo "[INFO] File .env dibuat dari .env.example. Edit DATABASE_URL dan secret di backend/.env jika diperlukan."
+  echo "[INFO] File .env dibuat dari .env.example. Edit DATABASE_URL dan secret di apps/api/.env jika diperlukan."
 fi
 
 DATABASE_URL="$(grep -E '^DATABASE_URL=' "$BACKEND_DIR/.env" | head -n 1 | cut -d= -f2- || true)"
@@ -16,14 +16,9 @@ if [[ -n "$DATABASE_URL" ]] && ! grep -Eq '^ADMIN_DATABASE_URL=' "$BACKEND_DIR/.
   echo "[INFO] ADMIN_DATABASE_URL ditambahkan otomatis dari DATABASE_URL untuk kebutuhan migrasi lokal."
 fi
 
-if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
-  echo "[INFO] Menginstall dependency frontend..."
-  (cd "$FRONTEND_DIR" && npm install)
-fi
-
-if [[ ! -d "$BACKEND_DIR/node_modules" ]]; then
-  echo "[INFO] Menginstall dependency backend..."
-  (cd "$BACKEND_DIR" && npm install)
+if [[ ! -d "$ROOT_DIR/node_modules" ]]; then
+  echo "[INFO] Menginstall dependency root workspace..."
+  npm install
 fi
 
 if command -v psql >/dev/null 2>&1; then
@@ -47,9 +42,7 @@ BACKEND_PID=$!
 
 sleep 3
 
-cd "$FRONTEND_DIR"
-echo "[INFO] Menjalankan frontend..."
-npm run dev -- --host 0.0.0.0 &
+(cd "$FRONTEND_DIR" && npm run dev -- --host 0.0.0.0) &
 FRONTEND_PID=$!
 
 cleanup() {
