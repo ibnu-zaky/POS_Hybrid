@@ -42,21 +42,25 @@ async function findStaffForPinLogin(merchantId, { staffId, email }) {
 }
 
 async function incrementPinFailure(merchantId, staffId, lockUntilIso) {
-  await pool.query(
-    `UPDATE staff
-     SET pin_failed_count = pin_failed_count + 1,
-         pin_locked_until = COALESCE($3, pin_locked_until)
-     WHERE merchant_id = $1 AND id = $2`,
-    [merchantId, staffId, lockUntilIso || null],
-  );
+  await withTenantContext(merchantId, async (client) => {
+    await client.query(
+      `UPDATE staff
+       SET pin_failed_count = pin_failed_count + 1,
+           pin_locked_until = COALESCE($2, pin_locked_until)
+       WHERE merchant_id = $1 AND id = $3`,
+      [merchantId, lockUntilIso || null, staffId],
+    );
+  });
 }
 
 async function resetPinFailures(merchantId, staffId) {
-  await pool.query(
-    `UPDATE staff SET pin_failed_count = 0, pin_locked_until = NULL
-     WHERE merchant_id = $1 AND id = $2`,
-    [merchantId, staffId],
-  );
+  await withTenantContext(merchantId, async (client) => {
+    await client.query(
+      `UPDATE staff SET pin_failed_count = 0, pin_locked_until = NULL
+       WHERE merchant_id = $1 AND id = $2`,
+      [merchantId, staffId],
+    );
+  });
 }
 
 async function setPinHash(merchantId, staffId, pinHash) {

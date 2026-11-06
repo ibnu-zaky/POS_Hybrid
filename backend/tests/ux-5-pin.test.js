@@ -175,6 +175,8 @@ test("ux-5: reset lockout (set waktu lock habis) -> login berhasil lagi", async 
     await pool.end();
   }
 
+  resetRateLimits();
+
   const res = await request.post("/auth/pin-login").send({
     merchant_code: MERCHANT_CODE,
     email: CASHIER_EMAIL,
@@ -182,17 +184,26 @@ test("ux-5: reset lockout (set waktu lock habis) -> login berhasil lagi", async 
     device_id: "cashier-tablet-1",
   });
 
+  if (res.status !== 200) {
+    console.log("DEBUG test 8 failed:", res.status, res.body);
+  }
+
   assert.equal(res.status, 200);
   assert.ok(res.body.access_token);
 });
 
 test("ux-5: isolasi tenant - merchant_code tidak dikenal -> 401", async () => {
+  resetRateLimits();
   const res = await request.post("/auth/pin-login").send({
     merchant_code: "nonexistent-merchant-xyz",
     email: CASHIER_EMAIL,
     pin: CASHIER_PIN,
     device_id: "cashier-tablet-1",
   });
+
+  if (res.status !== 401) {
+    console.log("DEBUG test 9 failed:", res.status, res.body);
+  }
 
   assert.equal(res.status, 401);
 });
@@ -214,6 +225,10 @@ test("ux-5: redeem pairing -> device_token", async () => {
   const res = await request
     .post("/auth/pairing/redeem")
     .send({ pairing_code: pairingCode, device_id: "tablet-kasir-1" });
+
+  if (res.status !== 200) {
+    console.log("DEBUG test 11 failed:", res.status, res.body);
+  }
 
   assert.equal(res.status, 200);
   assert.ok(res.body.data.device_token);
@@ -247,12 +262,18 @@ test("ux-5: PIN login dengan device_token (bukan merchant_code)", async () => {
     await pool.end();
   }
 
+  resetRateLimits();
+
   const res = await request.post("/auth/pin-login").send({
     device_token: deviceToken,
     email: CASHIER_EMAIL,
     pin: CASHIER_PIN,
     device_id: "tablet-kasir-1",
   });
+
+  if (res.status !== 200) {
+    console.log("DEBUG test 13 failed:", res.status, res.body, "with deviceToken:", deviceToken);
+  }
 
   assert.equal(res.status, 200);
   assert.equal(res.body.device_label, "Tablet Kasir 1");

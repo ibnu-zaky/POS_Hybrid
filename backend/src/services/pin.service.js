@@ -78,7 +78,7 @@ async function pinLogin({ merchantCode, deviceToken, staffId, email, pin, device
     const remainingMs = new Date(staff.pin_locked_until) - new Date();
     const remainingMin = Math.ceil(remainingMs / 60000);
     throw new AuthenticationError(
-      `Terlalu banyak percobaan gagal. Coba lagi dalam ${remainingMin} menit.`,
+      `Terlalu banyak percobaan gagal. Akun terkunci ${remainingMin} menit.`,
     );
   }
 
@@ -190,7 +190,7 @@ async function redeemPairing({ pairingCode, deviceId }) {
   const token = crypto.randomBytes(24).toString("hex");
   const tokenHash = hashDeviceToken(token);
 
-  const pair = await pinRepository.redeemDevicePair({ pairingCode: normalizeCode(pairingCode), tokenHash });
+  const pair = await pinRepository.redeemDevicePair({ pairingCode: pairingCode, tokenHash });
   if (!pair) {
     throw new AuthenticationError("Kode pairing tidak valid atau kedaluwarsa.");
   }

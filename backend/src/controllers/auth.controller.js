@@ -88,6 +88,7 @@ async function logout(request, response, next) {
 
 async function me(request, response, next) {
   try {
+    console.log("DEBUG /me request.auth:", request.auth);
     const { sub: staffId, merchant_id: merchantId, role } = request.auth;
     const db = request.db ?? pool;
 
@@ -107,6 +108,10 @@ async function me(request, response, next) {
         [merchantId],
       ),
     ]);
+    console.log("DEBUG /me query results:", {
+        staffCount: staffResult.rowCount,
+        merchantCount: merchantResult.rowCount
+    });
 
     const staff = staffResult.rows[0];
     const merchant = merchantResult.rows[0];
