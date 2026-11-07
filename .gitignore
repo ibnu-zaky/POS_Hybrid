@@ -9,3 +9,6 @@
 # Playwright CLI scratch and local worktrees
 .playwright-cli/
 .worktrees/
+
+# Build output packages/core
+packages/core/dist/

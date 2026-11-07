@@ -1,7 +1,8 @@
 const crypto = require("crypto");
-const { computeTotals } = require("@pos/core");
+const { computeTotals, roundHalfUp } = require("@pos/core");
 const { withTenantContext } = require("../config/database");
 const transactionRepository = require("../repositories/transaction.repository");
+const idempotencyRepository = require("../repositories/idempotency.repository");
 const inventoryService = require("./inventory.service");
 
 class TransactionError extends Error {
@@ -32,7 +33,7 @@ async function resolveOrderItems(client, merchantId, items) {
 
   return items.map((item) => {
     if (!item.menu_item_id) {
-      return { ...item, unit_price: Math.round(Number(item.unit_price)) };
+      return { ...item, unit_price: roundHalfUp(Number(item.unit_price)) };
     }
     const menuItem = catalogById.get(item.menu_item_id);
     if (!menuItem.is_active || !menuItem.is_available) {
@@ -84,7 +85,7 @@ async function getTransactionById({ merchantId, transactionId }) {
   });
 }
 
-async function createTransaction({ merchantId, staffId, payload }) {
+async function createTransaction({ merchantId, staffId, payload, idempotency = null }) {
   if (!merchantId || (payload?.source !== "qr" && !staffId)) {
     throw new TransactionError("Merchant and staff context required", 400);
   }
@@ -98,6 +99,31 @@ async function createTransaction({ merchantId, staffId, payload }) {
   const idempotencyKey = payload.idempotency_key || null;
 
   return withTenantContext(merchantId, async (client) => {
+    // Claim idempotency key di transaksi DB yang SAMA dengan penjualan.
+    // INSERT ... ON CONFLICT DO NOTHING RETURNING menyerialkan duplikat:
+    // request kedua menunggu commit request pertama, lalu dapat hasil asli.
+    let idempotencyClaimed = false;
+    if (idempotency?.key && idempotency?.hash) {
+      const { row, claimed } = await idempotencyRepository.claim(client, {
+        merchantId,
+        key: idempotency.key,
+        hash: idempotency.hash,
+      });
+
+      if (!claimed) {
+        if (row.request_hash !== idempotency.hash) {
+          throw new TransactionError("IDEMPOTENCY_PAYLOAD_MISMATCH", 422);
+        }
+        // Baris masih "0" hanya mungkin bila claim dibuat transaksi lain yang
+        // belum selesai; minta klien retry.
+        if (Number(row.response_status) === 0) {
+          throw new TransactionError("IDEMPOTENCY_IN_PROGRESS", 409);
+        }
+        return { ...(row.response_body?.data || {}), replayed: true };
+      }
+      idempotencyClaimed = true;
+    }
+
     if (idempotencyKey) {
       const replay = await transactionRepository.findByIdempotencyKey(client, { merchantId, idempotencyKey });
       if (replay) {
@@ -188,10 +214,23 @@ async function createTransaction({ merchantId, staffId, payload }) {
       });
     }
 
-    return {
+    const result = {
       ...transaction,
       items,
     };
+
+    // Simpan response di transaksi DB yang sama. Bila ada error setelah ini,
+    // rollback membatalkan penjualan sekaligus claim key.
+    if (idempotencyClaimed) {
+      await idempotencyRepository.complete(client, {
+        merchantId,
+        key: idempotency.key,
+        status: 201,
+        body: { data: result },
+      });
+    }
+
+    return result;
   });
 }
 

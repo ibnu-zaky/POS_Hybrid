@@ -2,6 +2,7 @@
 
 const { withTenantContext } = require("../config/database");
 const hrRepository = require("../repositories/hr.repository");
+const { round2 } = require("@pos/core");
 
 class HrError extends Error {
   constructor(message = "HR error", statusCode = 400) {
@@ -236,7 +237,7 @@ async function calculateCommissions({ merchantId, date }) {
       const staffSales = salesByStaff.get(staff.id);
       const baseAmount = Number(staffSales?.total_sales || 0);
       const rate = Number(staff.commission_rate);
-      const amount = Math.round(baseAmount * rate * 100) / 100;
+      const amount = round2(baseAmount * rate);
 
       const commission = await hrRepository.upsertCommission(client, {
         merchantId,

@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const { withTenantContext } = require("../config/database");
 const accountingRepository = require("../repositories/accounting.repository");
 const { getAdapter } = require("../accounting/factory");
+const { round2 } = require("@pos/core");
 
 const GL_ACCOUNTS = {
   CASH: { code: "1000", name: "Cash / Bank" },
@@ -41,8 +42,8 @@ function todayInJakarta() {
   return new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-function round2(n) {
-  return Math.round(Number(n) * 100) / 100;
+function roundMoney(n) {
+  return round2(Number(n));
 }
 
 // ——— Connections ———
@@ -116,10 +117,10 @@ async function generateDailyJournal({ merchantId, staffId, date }) {
     }
 
     const agg = await accountingRepository.aggregateDailySales(client, { merchantId, date: entryDate });
-    const totalSales = round2(agg.total_sales);
-    const totalTax = round2(agg.total_tax);
-    const estimatedCogs = round2(agg.estimated_cogs);
-    const dpp = round2(totalSales - totalTax); // revenue ex-tax
+    const totalSales = roundMoney(agg.total_sales);
+    const totalTax = roundMoney(agg.total_tax);
+    const estimatedCogs = roundMoney(agg.estimated_cogs);
+    const dpp = roundMoney(totalSales - totalTax); // revenue ex-tax
 
     if (totalSales === 0 && estimatedCogs === 0) {
       throw Object.assign(
@@ -141,8 +142,8 @@ async function generateDailyJournal({ merchantId, staffId, date }) {
     // CR Inventory
     if (estimatedCogs > 0) lines.push({ ...GL_ACCOUNTS.INVENTORY, debit: 0, credit: estimatedCogs });
 
-    const totalDebit = round2(lines.reduce((sum, l) => sum + l.debit, 0));
-    const totalCredit = round2(lines.reduce((sum, l) => sum + l.credit, 0));
+    const totalDebit = roundMoney(lines.reduce((sum, l) => sum + l.debit, 0));
+    const totalCredit = roundMoney(lines.reduce((sum, l) => sum + l.credit, 0));
 
     const entry = await accountingRepository.createJournalEntry(client, {
       merchantId,
@@ -244,10 +245,10 @@ async function createTaxInvoice({ merchantId, payload }) {
     const seq = String(count + 1).padStart(5, "0");
     const invoiceNumber = `INV-${payload.invoice_date.replace(/-/g, "")}-${seq}`;
 
-    const dppAmount = round2(payload.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0));
+    const dppAmount = roundMoney(payload.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0));
     const ppnRate = payload.ppn_rate ?? 0.11;
-    const ppnAmount = round2(dppAmount * ppnRate);
-    const totalAmount = round2(dppAmount + ppnAmount);
+    const ppnAmount = roundMoney(dppAmount * ppnRate);
+    const totalAmount = roundMoney(dppAmount + ppnAmount);
 
     return accountingRepository.createTaxInvoice(client, {
       merchantId,

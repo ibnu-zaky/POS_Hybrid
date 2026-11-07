@@ -93,9 +93,9 @@ test("idempotency generik: paralel request dengan key sama -> 1 transaksi", asyn
   ]);
 
   const statuses = [res1.status, res2.status].sort();
-  // Satu request membuat transaksi (201); duplikat yang datang saat request
-  // pertama masih berjalan mendapat 409 IDEMPOTENCY_IN_PROGRESS.
-  assert.deepEqual(statuses, [201, 409]);
+  // Claim + simpan response terjadi dalam transaksi DB yang sama, sehingga
+  // request kedua menunggu commit request pertama lalu mendapat hasil asli.
+  assert.deepEqual(statuses, [200, 201]);
 
   // Pastikan hanya satu transaksi yang benar-benar dibuat untuk key ini.
   const list = await request
@@ -103,4 +103,39 @@ test("idempotency generik: paralel request dengan key sama -> 1 transaksi", asyn
     .set("Authorization", `Bearer ${accessToken}`);
   const created = list.body.data.filter((t) => t.idempotency_key === key);
   assert.equal(created.length, 1, "hanya satu transaksi untuk satu key");
+});
+test("idempotency generik: request gagal tidak mengunci key -> retry berhasil", async () => {
+  const sku = `IDEMFAIL${Date.now()}`;
+
+  const inv = await request
+    .post("/admin/inventory")
+    .set("Authorization", `Bearer ${accessToken}`)
+    .send({ sku, product_name: `Idem Fail ${sku}`, quantity: 1, reorder_point: 0 });
+  assert.equal(inv.status, 201);
+
+  const key = `idem-fail-${Date.now()}`;
+  const payload = {
+    items: [{ product_name: "Idem Fail", sku, quantity: 5, unit_price: 1000 }],
+    payment_method: "cash",
+  };
+
+  const failed = await request
+    .post("/pos/transactions")
+    .set("Authorization", `Bearer ${accessToken}`)
+    .set("Idempotency-Key", key)
+    .send(payload);
+  assert.equal(failed.status, 409);
+
+  const adjust = await request
+    .post(`/admin/inventory/${inv.body.data.id}/adjust`)
+    .set("Authorization", `Bearer ${accessToken}`)
+    .send({ quantity: 10 });
+  assert.equal(adjust.status, 200);
+
+  const retry = await request
+    .post("/pos/transactions")
+    .set("Authorization", `Bearer ${accessToken}`)
+    .set("Idempotency-Key", key)
+    .send(payload);
+  assert.equal(retry.status, 201);
 });

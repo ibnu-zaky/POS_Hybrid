@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { roundHalfUp } = require("@pos/core");
 const env = require("../config/env");
 const PaymentAdapter = require("./payment-adapter");
 
@@ -17,7 +18,7 @@ class StripeAdapter extends PaymentAdapter {
     const response = await fetch("https://api.stripe.com/v1/payment_intents", {
       method: "POST",
       headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`, "Content-Type": "application/x-www-form-urlencoded", "Idempotency-Key": idempotencyKey },
-      body: formBody({ amount: Math.round(input.amount), currency: input.currency.toLowerCase(), "metadata[transaction_id]": input.transactionId, "metadata[merchant_id]": input.merchantId }),
+      body: formBody({ amount: roundHalfUp(input.amount), currency: input.currency.toLowerCase(), "metadata[transaction_id]": input.transactionId, "metadata[merchant_id]": input.merchantId }),
     });
     if (!response.ok) throw new Error(`Stripe payment creation failed: ${response.status}`);
     const data = await response.json();
@@ -37,7 +38,7 @@ class StripeAdapter extends PaymentAdapter {
   }
 
   async refundPayment(providerPaymentId, amount) {
-    const response = await fetch("https://api.stripe.com/v1/refunds", { method: "POST", headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`, "Content-Type": "application/x-www-form-urlencoded" }, body: formBody({ payment_intent: providerPaymentId, amount: Math.round(amount) }) });
+    const response = await fetch("https://api.stripe.com/v1/refunds", { method: "POST", headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`, "Content-Type": "application/x-www-form-urlencoded" }, body: formBody({ payment_intent: providerPaymentId, amount: roundHalfUp(amount) }) });
     if (!response.ok) throw new Error(`Stripe refund failed: ${response.status}`);
     return response.json();
   }

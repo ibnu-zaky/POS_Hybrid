@@ -53,6 +53,7 @@ router.post("/transactions", idempotencyMiddleware(), authorize(["admin", "manag
       merchantId,
       staffId,
       payload,
+      idempotency: request.idempotency || null,
     });
 
     if (result.replayed) {
