@@ -30,8 +30,16 @@ const availabilitySchema = z.object({
   is_available: z.boolean(),
 }).strict();
 
+const createVariantSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  price_override: z.number().int().min(0),
+  sku: z.string().trim().max(100).optional().nullable(),
+  is_available: z.boolean().default(true),
+}).strict();
+
 module.exports = {
   createMenuItemSchema,
   updateMenuItemSchema,
   availabilitySchema,
+  createVariantSchema,
 };

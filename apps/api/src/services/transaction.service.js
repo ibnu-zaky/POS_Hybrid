@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const { computeTotals, roundHalfUp } = require("@pos/core");
 const { withTenantContext } = require("../config/database");
 const transactionRepository = require("../repositories/transaction.repository");
+const { logAudit } = require("./audit.service");
 const idempotencyRepository = require("../repositories/idempotency.repository");
 const inventoryService = require("./inventory.service");
 
@@ -23,12 +24,21 @@ class TransactionOrderError extends Error {
 
 async function resolveOrderItems(client, merchantId, items) {
   const menuItemIds = [...new Set(items.map((item) => item.menu_item_id).filter(Boolean))];
-  const catalogRows = menuItemIds.length
-    ? await transactionRepository.getMenuItemsForOrder(client, { merchantId, menuItemIds })
-    : [];
+  const variantIds = [...new Set(items.map((item) => item.variant_id).filter(Boolean))];
+
+  const [catalogRows, variantRows] = await Promise.all([
+    menuItemIds.length ? transactionRepository.getMenuItemsForOrder(client, { merchantId, menuItemIds }) : [],
+    variantIds.length ? transactionRepository.getVariantsForOrder(client, { merchantId, variantIds }) : [],
+  ]);
+
   const catalogById = new Map(catalogRows.map((item) => [item.id, item]));
+  const variantsById = new Map(variantRows.map((item) => [item.id, item]));
+
   if (catalogRows.length !== menuItemIds.length) {
     throw new TransactionError("One or more menu items were not found", 404);
+  }
+  if (variantRows.length !== variantIds.length) {
+    throw new TransactionError("One or more variants were not found", 404);
   }
 
   return items.map((item) => {
@@ -39,12 +49,33 @@ async function resolveOrderItems(client, merchantId, items) {
     if (!menuItem.is_active || !menuItem.is_available) {
       throw new TransactionError(`Menu item is unavailable: ${menuItem.name}`, 409);
     }
+
+    let finalPrice = menuItem.price;
+    let finalName = menuItem.name;
+    let finalSku = menuItem.sku;
+    let finalVariantId = null;
+
+    if (item.variant_id) {
+      const variant = variantsById.get(item.variant_id);
+      if (!variant || variant.menu_item_id !== menuItem.id) {
+        throw new TransactionError(`Variant does not belong to menu item: ${menuItem.name}`, 400);
+      }
+      if (!variant.is_available) {
+        throw new TransactionError(`Variant is unavailable: ${variant.name}`, 409);
+      }
+      finalPrice = variant.price_override;
+      finalName = `${menuItem.name} (${variant.name})`;
+      finalSku = variant.sku || menuItem.sku;
+      finalVariantId = variant.id;
+    }
+
     return {
       ...item,
       menu_item_id: menuItem.id,
-      product_name: menuItem.name,
-      sku: menuItem.sku,
-      unit_price: menuItem.price,
+      variant_id: finalVariantId,
+      product_name: finalName,
+      sku: finalSku,
+      unit_price: finalPrice,
       discount_amount: 0,
     };
   });
@@ -199,6 +230,7 @@ async function createTransaction({ merchantId, staffId, payload, idempotency = n
       unit_price: item.unit_price,
       discount_amount: item.discount_amount,
       line_total: item.line_total,
+      variant_id: item.variant_id,
     }));
 
     await transactionRepository.insertItems(client, transaction.id, items);
@@ -218,6 +250,13 @@ async function createTransaction({ merchantId, staffId, payload, idempotency = n
       ...transaction,
       items,
     };
+
+    await logAudit({
+      merchantId,
+      eventType: "transaction.create",
+      actorId: staffId,
+      metadata: { transaction_id: transaction.id, order_number: transaction.order_number, grand_total: totals.grandTotal },
+    }, client);
 
     // Simpan response di transaksi DB yang sama. Bila ada error setelah ini,
     // rollback membatalkan penjualan sekaligus claim key.
@@ -310,7 +349,7 @@ async function updateTransaction({ merchantId, transactionId, staffId, payload }
   });
 }
 
-async function deleteTransaction({ merchantId, transactionId }) {
+async function deleteTransaction({ merchantId, transactionId, staffId }) {
   if (!transactionId) {
     throw new TransactionError("Transaction id is required", 400);
   }
@@ -341,6 +380,14 @@ async function deleteTransaction({ merchantId, transactionId }) {
     });
 
     const voided = await transactionRepository.markVoided(client, { merchantId, transactionId, reason: null });
+
+    await logAudit({
+      merchantId,
+      eventType: "transaction.void",
+      actorId: staffId,
+      metadata: { transaction_id: transactionId, previous_status: existing.status },
+    }, client);
+
     return { voided: true, id: transactionId, status: "voided", voided_at: voided.voided_at };
   });
 }

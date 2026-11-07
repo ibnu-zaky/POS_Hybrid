@@ -1,5 +1,6 @@
 const { withTenantContext } = require("../config/database");
 const inventoryRepository = require("../repositories/inventory.repository");
+const { logAudit } = require("./audit.service");
 const cache = require("../config/cache");
 const env = require("../config/env");
 
@@ -149,6 +150,12 @@ async function adjustStock({ merchantId, inventoryId, staffId, payload }) {
       referenceId: payload.reference_id,
       createdBy: staffId,
     });
+    await logAudit({
+      merchantId,
+      eventType: "inventory.adjust",
+      actorId: staffId,
+      metadata: { inventory_id: existing.id, sku: existing.sku, delta, next_quantity: nextQuantity },
+    }, client);
     await cache.del("inv-avail", [merchantId, existing.sku]);
 
     return updated;

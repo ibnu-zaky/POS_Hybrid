@@ -2,6 +2,7 @@ const { z } = require("zod");
 
 const itemSchema = z.object({
   menu_item_id: z.string().uuid().optional(),
+  variant_id: z.string().uuid().optional(),
   product_id: z.string().uuid().optional().nullable(),
   product_name: z.string().trim().min(1).max(255).optional(),
   sku: z.string().trim().max(100).optional().nullable(),

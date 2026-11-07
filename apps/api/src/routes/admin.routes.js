@@ -44,6 +44,8 @@ router.get("/menu-items", menuItemsController.listMenuItems);
 router.post("/menu-items", menuItemsController.createMenuItem);
 router.patch("/menu-items/:id", menuItemsController.updateMenuItem);
 router.delete("/menu-items/:id", menuItemsController.deleteMenuItem);
+router.get("/menu-items/:id/variants", menuItemsController.listVariants);
+router.post("/menu-items/:id/variants", menuItemsController.createVariant);
 
 // ---- Dining Tables ----
 router.get("/tables", tablesController.listTables);

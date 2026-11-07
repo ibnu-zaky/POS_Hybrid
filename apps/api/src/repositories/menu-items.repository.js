@@ -120,6 +120,45 @@ async function menuCountByCategory(client, merchantId) {
   return result.rows.map((r) => ({ category_id: r.category_id, total: r.total }));
 }
 
+async function createVariant(client, merchantId, input) {
+  const result = await client.query(
+    `INSERT INTO menu_item_variants (merchant_id, menu_item_id, name, sku, price_override, is_available)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, merchant_id, menu_item_id, name, sku, price_override, is_available, created_at, updated_at`,
+    [
+      merchantId,
+      input.menu_item_id,
+      input.name,
+      input.sku || null,
+      input.price_override,
+      input.is_available,
+    ],
+  );
+  return result.rows[0];
+}
+
+async function listVariants(client, merchantId, menuItemId) {
+  const result = await client.query(
+    `SELECT id, merchant_id, menu_item_id, name, sku, price_override, is_available, created_at, updated_at
+     FROM menu_item_variants
+     WHERE merchant_id = $1 AND menu_item_id = $2
+     ORDER BY name ASC`,
+    [merchantId, menuItemId],
+  );
+  return result.rows;
+}
+
+async function findVariantById(client, merchantId, variantId) {
+  const result = await client.query(
+    `SELECT id, merchant_id, menu_item_id, name, sku, price_override, is_available, created_at, updated_at
+     FROM menu_item_variants
+     WHERE id = $1 AND merchant_id = $2
+     LIMIT 1`,
+    [variantId, merchantId],
+  );
+  return result.rows[0] || null;
+}
+
 module.exports = {
   listMenuItems,
   countMenuItems,
@@ -129,4 +168,8 @@ module.exports = {
   softDeleteMenuItem,
   setAvailability,
   menuCountByCategory,
+  createVariant,
+  listVariants,
+  findVariantById,
 };
+

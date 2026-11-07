@@ -42,7 +42,7 @@ async function findById(client, { merchantId, transactionId }) {
 
 async function findItemsByTransactionId(client, transactionId) {
   const result = await client.query(
-    `SELECT id, transaction_id, menu_item_id, product_id, product_name, sku, quantity, unit_price, discount_amount,
+    `SELECT id, transaction_id, menu_item_id, variant_id, product_id, product_name, sku, quantity, unit_price, discount_amount,
             line_total, note, created_at
      FROM transaction_items
      WHERE transaction_id = $1
@@ -75,6 +75,17 @@ async function getMenuItemsForOrder(client, { merchantId, menuItemIds }) {
      WHERE merchant_id = $1 AND id = ANY($2::uuid[])
      FOR SHARE`,
     [merchantId, menuItemIds],
+  );
+  return result.rows;
+}
+
+async function getVariantsForOrder(client, { merchantId, variantIds }) {
+  const result = await client.query(
+    `SELECT id, menu_item_id, name, sku, price_override, is_available
+     FROM menu_item_variants
+     WHERE merchant_id = $1 AND id = ANY($2::uuid[])
+     FOR SHARE`,
+    [merchantId, variantIds],
   );
   return result.rows;
 }
@@ -151,13 +162,14 @@ async function insertItems(client, transactionId, items) {
   }
 
   const values = items.map((item, index) => {
-    const startIndex = index * 10 + 1;
-    return `($${startIndex}, $${startIndex + 1}, $${startIndex + 2}, $${startIndex + 3}, $${startIndex + 4}, $${startIndex + 5}, $${startIndex + 6}, $${startIndex + 7}, $${startIndex + 8}, $${startIndex + 9})`;
+    const startIndex = index * 11 + 1;
+    return `($${startIndex}, $${startIndex + 1}, $${startIndex + 2}, $${startIndex + 3}, $${startIndex + 4}, $${startIndex + 5}, $${startIndex + 6}, $${startIndex + 7}, $${startIndex + 8}, $${startIndex + 9}, $${startIndex + 10})`;
   });
 
   const flatValues = items.flatMap((item) => [
     transactionId,
     item.menu_item_id || null,
+    item.variant_id || null,
     item.product_id || null,
     item.product_name || "Item",
     item.sku || null,
@@ -170,7 +182,7 @@ async function insertItems(client, transactionId, items) {
 
   const query = `
     INSERT INTO transaction_items (
-      transaction_id, menu_item_id, product_id, product_name, sku, quantity, unit_price, discount_amount, line_total, note
+      transaction_id, menu_item_id, variant_id, product_id, product_name, sku, quantity, unit_price, discount_amount, line_total, note
     ) VALUES ${values.join(", ")}
     RETURNING *
   `;
@@ -246,6 +258,7 @@ module.exports = {
   findById,
   findByIdempotencyKey,
   getMenuItemsForOrder,
+  getVariantsForOrder,
   findTableForOrder,
   getNextDailyNumber,
   findItemsByTransactionId,

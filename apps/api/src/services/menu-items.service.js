@@ -47,10 +47,29 @@ async function setAvailability({ merchantId, menuId, payload }) {
   });
 }
 
+async function createVariant({ merchantId, menuId, payload }) {
+  return withTenantContext(merchantId, async (client) => {
+    const item = await menuItemsRepository.findMenuItemById(client, merchantId, menuId);
+    if (!item) throw new ApiError(404, "Menu item not found");
+    return menuItemsRepository.createVariant(client, merchantId, { ...payload, menu_item_id: menuId });
+  });
+}
+
+async function listVariants({ merchantId, menuId }) {
+  return withTenantContext(merchantId, async (client) => {
+    const item = await menuItemsRepository.findMenuItemById(client, merchantId, menuId);
+    if (!item) throw new ApiError(404, "Menu item not found");
+    const rows = await menuItemsRepository.listVariants(client, merchantId, menuId);
+    return { data: rows };
+  });
+}
+
 module.exports = {
   listMenuItems,
   createMenuItem,
   updateMenuItem,
   deleteMenuItem,
   setAvailability,
+  createVariant,
+  listVariants,
 };

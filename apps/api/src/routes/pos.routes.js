@@ -102,9 +102,11 @@ router.patch("/transactions/:id", authorize(["admin", "manager", "cashier"]), as
 router.delete("/transactions/:id", authorize(["admin", "manager"]), async (request, response, next) => {
   try {
     const merchantId = request.auth.merchant_id;
+    const staffId = request.auth.sub;
     const result = await transactionService.deleteTransaction({
       merchantId,
       transactionId: request.params.id,
+      staffId,
     });
 
     response.status(200).json({ data: result });
