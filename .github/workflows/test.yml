@@ -75,6 +75,10 @@ jobs:
           psql -h localhost -U postgres -d pos_hybrid -v ON_ERROR_STOP=1 -c "
             GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pos_app;
             GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pos_app;
+            -- audit_logs wajib append-only: grant global di atas membatalkan
+            -- REVOKE dari migrasi 021, jadi terapkan ulang di sini.
+            REVOKE UPDATE, DELETE, TRUNCATE ON audit_logs FROM pos_app;
+            GRANT SELECT, INSERT ON audit_logs TO pos_app;
           "
 
       - name: Seed development data

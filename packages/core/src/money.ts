@@ -24,6 +24,13 @@ export interface OrderItem {
   [key: string]: unknown;
 }
 
+export interface NormalizedOrderItem extends OrderItem {
+  quantity: number;
+  unit_price: number;
+  discount_amount: number;
+  line_total: number;
+}
+
 export interface ComputeTotalsOptions {
   discountPct?: number;
   taxPct?: number;
@@ -31,7 +38,7 @@ export interface ComputeTotalsOptions {
 
 // Perilaku identik dengan versi JS lama (dipakai test lama lewat re-export).
 export function computeTotals(items: OrderItem[], { discountPct = 0, taxPct = 11 }: ComputeTotalsOptions = {}) {
-  const normalized = (items || []).map((item) => {
+  const normalized: NormalizedOrderItem[] = (items || []).map((item) => {
     const quantity = Number(item.quantity || 0);
     const unitPrice = Number(item.unit_price || 0);
     const itemSubtotal = quantity * unitPrice;
@@ -43,7 +50,7 @@ export function computeTotals(items: OrderItem[], { discountPct = 0, taxPct = 11
       unit_price: unitPrice,
       discount_amount: discountAmount,
       line_total: itemSubtotal - discountAmount,
-    };
+    } as NormalizedOrderItem;
   });
 
   const subtotal = normalized.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);

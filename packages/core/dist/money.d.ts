@@ -12,17 +12,18 @@ export interface OrderItem {
     line_total?: number;
     [key: string]: unknown;
 }
+export interface NormalizedOrderItem extends OrderItem {
+    quantity: number;
+    unit_price: number;
+    discount_amount: number;
+    line_total: number;
+}
 export interface ComputeTotalsOptions {
     discountPct?: number;
     taxPct?: number;
 }
 export declare function computeTotals(items: OrderItem[], { discountPct, taxPct }?: ComputeTotalsOptions): {
-    items: {
-        quantity: number;
-        unit_price: number;
-        discount_amount: number;
-        line_total: number;
-    }[];
+    items: NormalizedOrderItem[];
     subtotal: number;
     taxAmount: number;
     grandTotal: number;

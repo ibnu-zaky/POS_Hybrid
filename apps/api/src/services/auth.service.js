@@ -54,7 +54,6 @@ async function logAuthEvent({ eventType, userId, merchantId, deviceId, ipAddress
           auditRecord.user_agent,
           JSON.stringify(auditRecord.metadata || {}),
         ];
-        console.log(`[AUDIT_DEBUG] executing insert into audit_logs for merchant=${merchantId}`);
         await client.query(query, values);
       });
     } else if (pool && typeof pool.query === "function") {

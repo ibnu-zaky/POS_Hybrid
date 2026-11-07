@@ -14,8 +14,16 @@ const path = require("path");
 
 const root = path.resolve(__dirname, "..");
 const baselinePath = path.join(__dirname, "typecheck-baseline.json");
-const tscPath = path.join(root, "apps", "web", "node_modules", ".bin", "tsc");
 const jsconfigPath = path.join(root, "apps", "api", "jsconfig.json");
+const tscCandidates = [
+  path.join(root, "node_modules", ".bin", "tsc"),
+  path.join(root, "apps", "web", "node_modules", ".bin", "tsc"),
+];
+const tscPath = tscCandidates.find((candidate) => fs.existsSync(candidate));
+if (!tscPath) {
+  console.error("tsc tidak ditemukan. Jalankan npm install di root.");
+  process.exit(1);
+}
 
 const baseline = JSON.parse(fs.readFileSync(baselinePath, "utf8"));
 

@@ -126,6 +126,7 @@ test("conc: tidak ada movement ganda", async () => {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   const client = await pool.connect();
   try {
+    await client.query("BEGIN");
     await client.query("SELECT set_config('app.merchant_id', $1, true)", [MERCHANT_ID]);
     const { rows } = await client.query(
       `SELECT sku, type, COUNT(*) AS movements
@@ -134,10 +135,11 @@ test("conc: tidak ada movement ganda", async () => {
        GROUP BY sku, type`,
       [MERCHANT_ID, `CONC${RUN_ID}%`]
     );
+    await client.query("COMMIT");
 
     for (const row of rows) {
       // setiap SKU dibeli 1x berhasil → tepat 1 movement sale dengan quantity -1
-      assert.equal(row.movements, 1, `SKU ${row.sku} hanya boleh punya 1 movement sale`);
+      assert.equal(Number(row.movements), 1, `SKU ${row.sku} hanya boleh punya 1 movement sale`);
     }
     assert.ok(rows.length >= 1, "harus ada movement yang tercatat");
   } finally {

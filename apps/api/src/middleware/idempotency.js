@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { withTenantContext } = require("../config/database");
 const idempotencyRepository = require("../repositories/idempotency.repository");
+const { claim, complete } = idempotencyRepository;
 
 function idempotencyMiddleware() {
   return async (request, response, next) => {
@@ -17,9 +18,9 @@ function idempotencyMiddleware() {
 
     try {
       const { row: existing, claimed } = await withTenantContext(merchantId, async (client) => {
-        return idempotencyRepository.claim(client, { merchantId, key, hash });
+        return claim(client, { merchantId, key, hash });
       });
-
+      
       if (!claimed) {
         if (existing.request_hash !== hash) {
           return response.status(422).json({
@@ -27,7 +28,12 @@ function idempotencyMiddleware() {
             message: "Idempotency key already used with different payload"
           });
         }
-        return response.status(existing.response_status || 200).json({
+        // Request pertama masih berjalan (response belum tersimpan)
+        if (existing.response_status === 0) {
+          return response.status(409).json({ error: "IDEMPOTENCY_IN_PROGRESS" });
+        }
+        // Replay selalu 200 + replayed:true
+        return response.status(200).json({
           ...existing.response_body,
           replayed: true
         });
@@ -35,9 +41,16 @@ function idempotencyMiddleware() {
 
       const originalJson = response.json.bind(response);
       response.json = function(body) {
-        withTenantContext(merchantId, async (client) => {
-          await idempotencyRepository.complete(client, { merchantId, key, status: response.statusCode, body });
-        }).catch(() => {});
+        if (response.statusCode < 400) {
+          withTenantContext(merchantId, async (client) => {
+            await complete(client, { merchantId, key, status: response.statusCode, body });
+          }).catch((e) => console.error("complete err", e));
+        } else {
+          // Gagal: lepas key supaya retry boleh
+          withTenantContext(merchantId, async (client) => {
+            await client.query("DELETE FROM idempotency_keys WHERE merchant_id = $1 AND key = $2", [merchantId, key]);
+          }).catch((e) => console.error("cleanup err", e));
+        }
         return originalJson(body);
       };
 

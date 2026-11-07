@@ -46,7 +46,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON role_permissions TO pos_app;
 
 -- Backfill permission dasar untuk semua merchant yang ada
 INSERT INTO permissions (merchant_id, code, description)
-SELECT m.id, p.code, p.desc
+SELECT m.id, p.code, p.description
 FROM merchants m
 CROSS JOIN (
   VALUES 
@@ -55,7 +55,7 @@ CROSS JOIN (
     ('transaction:void', 'Void transaksi'),
     ('inventory:manage', 'Kelola inventaris dan stok'),
     ('admin:manage', 'Kelola staff dan konfigurasi')
-) AS p(code, desc)
+) AS p(code, description)
 ON CONFLICT (merchant_id, code) DO NOTHING;
 
 -- Backfill role_permissions untuk role default (admin, manager, cashier, integration)
@@ -77,7 +77,7 @@ JOIN (
     ('cashier', 'transaction:read'),
     ('integration', 'transaction:create'),
     ('integration', 'transaction:read')
-) AS r(role, code) ON p.merchant_id = r.merchant_id AND p.code = r.code
+) AS r(role, code) ON p.code = r.code
 ON CONFLICT (merchant_id, role, permission_id) DO NOTHING;
 
 COMMIT;

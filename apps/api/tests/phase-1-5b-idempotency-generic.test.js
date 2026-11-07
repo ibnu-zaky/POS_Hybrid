@@ -93,5 +93,14 @@ test("idempotency generik: paralel request dengan key sama -> 1 transaksi", asyn
   ]);
 
   const statuses = [res1.status, res2.status].sort();
-  assert.deepEqual(statuses, [200, 201]); // 1 created (201), 1 replayed (200)
+  // Satu request membuat transaksi (201); duplikat yang datang saat request
+  // pertama masih berjalan mendapat 409 IDEMPOTENCY_IN_PROGRESS.
+  assert.deepEqual(statuses, [201, 409]);
+
+  // Pastikan hanya satu transaksi yang benar-benar dibuat untuk key ini.
+  const list = await request
+    .get("/pos/transactions?limit=100")
+    .set("Authorization", `Bearer ${accessToken}`);
+  const created = list.body.data.filter((t) => t.idempotency_key === key);
+  assert.equal(created.length, 1, "hanya satu transaksi untuk satu key");
 });
