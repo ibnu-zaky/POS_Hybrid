@@ -325,17 +325,27 @@ async function deleteTransaction({ merchantId, transactionId }) {
       throw new TransactionError("Transaction not found", 404);
     }
 
+    // Sudah void → idempoten, tidak restock ganda.
+    if (existing.status === "voided") {
+      return { voided: true, id: transactionId, status: "voided", voided_at: existing.voided_at };
+    }
+
+    // Transaksi lunas via pembayaran (paid/refunded) tidak boleh di-void (gunakan refund).
+    if (existing.status === "paid" || existing.status === "refunded") {
+      throw new TransactionError("Transaksi sudah lunas, tidak dapat di-void", 409);
+    }
+
     const items = await transactionRepository.findItemsByTransactionId(client, transactionId);
     await inventoryService.applyStockDeltas(client, {
       merchantId,
       items,
       sign: 1,
-      type: "restock",
+      type: "void",
       transactionId,
     });
 
-    const removed = await transactionRepository.remove(client, { merchantId, transactionId });
-    return { deleted: removed, id: transactionId };
+    const voided = await transactionRepository.markVoided(client, { merchantId, transactionId, reason: null });
+    return { voided: true, id: transactionId, status: "voided", voided_at: voided.voided_at };
   });
 }
 

@@ -218,6 +218,18 @@ async function update(client, { merchantId, transactionId, updates }) {
   return result.rows[0] || null;
 }
 
+async function markVoided(client, { merchantId, transactionId, reason }) {
+  const result = await client.query(
+    `UPDATE transactions
+     SET status = 'voided', voided_at = NOW(), void_reason = $1, updated_at = NOW()
+     WHERE id = $2 AND merchant_id = $3
+     RETURNING id, voided_at, void_reason`,
+    [reason, transactionId, merchantId],
+  );
+
+  return result.rows[0] || null;
+}
+
 async function remove(client, { merchantId, transactionId }) {
   await client.query(`DELETE FROM transaction_items WHERE transaction_id = $1`, [transactionId]);
   const result = await client.query(
@@ -242,4 +254,5 @@ module.exports = {
   replaceItems,
   update,
   remove,
+  markVoided,
 };
