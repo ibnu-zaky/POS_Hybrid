@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { computeTotals } = require("@pos/core");
 const { withTenantContext } = require("../config/database");
 const transactionRepository = require("../repositories/transaction.repository");
 const inventoryService = require("./inventory.service");
@@ -17,50 +18,6 @@ class TransactionOrderError extends Error {
     this.name = "TransactionOrderError";
     this.statusCode = statusCode;
   }
-}
-
-function computeTotals(items, { discountPct = 0, taxPct = 11 } = {}) {
-  const normalized = (items || []).map((item) => {
-    const quantity = Number(item.quantity || 0);
-    const unitPrice = Number(item.unit_price || 0);
-    const itemSubtotal = quantity * unitPrice;
-    const discountAmount = Math.min(itemSubtotal, Math.round(Number(item.discount_amount || 0)));
-
-    return {
-      ...item,
-      quantity,
-      unit_price: unitPrice,
-      discount_amount: discountAmount,
-      line_total: itemSubtotal - discountAmount,
-    };
-  });
-
-  const subtotal = normalized.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-  const itemDiscount = normalized.reduce((sum, item) => sum + item.discount_amount, 0);
-  const amountAfterItemDiscounts = subtotal - itemDiscount;
-  const percentageDiscount = Math.round(amountAfterItemDiscounts * discountPct / 100);
-  let distributedDiscount = 0;
-  normalized.forEach((item, index) => {
-    const allocatedDiscount = index === normalized.length - 1
-      ? percentageDiscount - distributedDiscount
-      : amountAfterItemDiscounts === 0
-        ? 0
-        : Math.floor(item.line_total * percentageDiscount / amountAfterItemDiscounts);
-    item.line_total -= allocatedDiscount;
-    distributedDiscount += allocatedDiscount;
-  });
-  const discountAmount = itemDiscount + percentageDiscount;
-  const taxableAmount = subtotal - discountAmount;
-  const taxAmount = Math.round(taxableAmount * taxPct / 100);
-  const grandTotal = taxableAmount + taxAmount;
-
-  return {
-    items: normalized,
-    subtotal,
-    taxAmount,
-    grandTotal,
-    discountAmount,
-  };
 }
 
 async function resolveOrderItems(client, merchantId, items) {

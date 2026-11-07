@@ -16,6 +16,7 @@
   "type": "commonjs",
   "description": "",
   "dependencies": {
+    "@pos/core": "*",
     "argon2": "^0.45.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
