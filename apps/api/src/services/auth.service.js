@@ -33,16 +33,34 @@ async function logAuthEvent({ eventType, userId, merchantId, deviceId, ipAddress
     ip_address: ipAddress || null,
     user_agent: userAgent || null,
     metadata,
-    created_at: new Date().toISOString(),
+    occurred_at: new Date().toISOString(),
+    received_at: new Date().toISOString(),
   };
 
   authAuditLogs.push(auditRecord);
 
   try {
-    if (pool && typeof pool.query === "function") {
+    if (merchantId) {
+      await withTenantContext(merchantId, async (client) => {
+        const query = `INSERT INTO audit_logs (id, event_type, user_id, merchant_id, device_id, ip_address, user_agent, metadata, occurred_at, received_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())`;
+        const values = [
+          auditRecord.id,
+          auditRecord.event_type,
+          auditRecord.user_id,
+          auditRecord.merchant_id,
+          auditRecord.device_id,
+          auditRecord.ip_address,
+          auditRecord.user_agent,
+          JSON.stringify(auditRecord.metadata || {}),
+        ];
+        console.log(`[AUDIT_DEBUG] executing insert into audit_logs for merchant=${merchantId}`);
+        await client.query(query, values);
+      });
+    } else if (pool && typeof pool.query === "function") {
       await pool.query(
-        `INSERT INTO auth_audit_logs (id, event_type, user_id, merchant_id, device_id, ip_address, user_agent, metadata, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+        `INSERT INTO audit_logs (id, event_type, user_id, merchant_id, device_id, ip_address, user_agent, metadata, occurred_at, received_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
         [
           auditRecord.id,
           auditRecord.event_type,
@@ -55,8 +73,9 @@ async function logAuthEvent({ eventType, userId, merchantId, deviceId, ipAddress
         ],
       );
     }
-  } catch (_error) {
+  } catch (error) {
     // Keep app working in development even when the migration is not yet granted.
+    console.error("logAuthEvent error:", error.message);
   }
 }
 
