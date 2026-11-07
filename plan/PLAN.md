@@ -276,7 +276,7 @@ Semua test lulus (`npm test`), RLS terbukti (tenant A tidak baca data tenant B),
 | Fase UX I (Integrasi Frontend ↔ API) | ⬜ | Ganti localStorage → API, loading/error, offline queue, SSE, layar sudah ✅ |
 | Fase UX J (QA e2e + rilis) | ⬜ | Skenario penuh, rate limit, perangkat/tema, offline tanpa duplikat, review keamanan |
 
-**Catatan status**: backend-only (Express 5 + PostgreSQL RLS), frontend PWA "Warung Kapur" (Tahap 1–5 + UI Alignment vs prototype referensi) selesai sebagai prototype standalone localStorage. **Backend Phase 1–3 100%, Phase 4.2–4.3 (hardening) 100%, Frontend UI Alignment 100%.** Test hijau semua: **206/206** (`phase-1-1`, `phase-1-4`, `phase-1-5`, `phase-1-6`, `phase-1-7`, `phase-2-1`, `phase-2-2`, `phase-3-1`, `phase-3-2`, `phase-3-3`, `phase-4-hardening.test.js`, `ux-0-hardening.test.js`, `ux-1-catalog.test.js`, `ux-2-orders.test.js`, `ux-3-public.test.js`, `phase-e-orders.test.js`).
+**Catatan status**: backend-only (Express 5 + PostgreSQL RLS), frontend PWA "Warung Kapur" (Tahap 1–5 + UI Alignment vs prototype referensi) selesai sebagai prototype standalone localStorage. **Backend Phase 1–3 100%, Phase 4.2–4.3 (hardening) 100%, Frontend UI Alignment 100%, Retrofit Fase 0–1 100%.** Test hijau semua: **250/250** (termasuk `phase-1-12-variants`, `phase-1-13-openapi`).
 
 ---
 

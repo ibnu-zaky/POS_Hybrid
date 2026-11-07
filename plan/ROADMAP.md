@@ -2,7 +2,7 @@
 
 **Tujuan:** POS system general/flexible seperti WordPress. Client mengatur fitur aktif dan UI/UX sendiri, dengan arsitektur modular (microkernel).
 
-**Pendekatan:** retrofit bertahap. Kode yang sudah ada (206 test hijau) dipertahankan, direstrukturisasi ke monorepo, lalu selisih terhadap roadmap ditutup berurutan berdasarkan risiko.
+**Pendekatan:** retrofit bertahap. Kode yang sudah ada (250 test hijau) dipertahankan, direstrukturisasi ke monorepo, lalu selisih terhadap roadmap ditutup berurutan berdasarkan risiko.
 
 **Stack:** TypeScript full-stack, Postgres (RLS), SQLite/IndexedDB di client, PWA dulu. Migrasi TS bertahap: `allowJs` + `checkJs`, file baru wajib TS, `packages/core` TS sejak awal, backend CommonJS dikonversi per modul saat disentuh.
 
@@ -19,16 +19,16 @@ Struktur: `backend/` (JS CommonJS) + `frontend/` (TS) + `migrations/`, tanpa wor
 | Multi-tenant RLS | ✅ | |
 | Inventory append-only + anti-oversell | ✅ | |
 | Sales/transaksi | ✅ | |
-| Idempotency di transaksi | 🟡 | replay 200 diam-diam, belum generik, belum ada 422 |
-| Audit log | 🟡 | hanya auth/payment; belum `occurred_at`/`received_at` |
-| RBAC | 🟡 | role allow-list, belum permission-based |
-| Void/refund | ❌ | void = hard delete (melanggar invariant) |
-| Modul uang terpusat | ❌ | pembulatan tersebar |
-| Varian produk, price snapshot | ❌ | |
-| Tes dua kasir stok terakhir | ❌ | |
-| OpenAPI | ❌ | |
-| ADR, monorepo, AGENTS.md | ❌ | |
-| CI | 🟡 | hanya backend; frontend belum lint/build |
+| Idempotency di transaksi | ✅ | generik, 422 payload mismatch, replay 200 |
+| Audit log | ✅ | `occurred_at`, `received_at`, `device_id`, append-only |
+| RBAC | ✅ | permission-based, tenant-isolated |
+| Void/refund | ✅ | void non-destruktif, refund alur terpisah |
+| Modul uang terpusat | ✅ | `packages/core` integer rupiah, pembulatan half-away-from-zero |
+| Varian produk, price snapshot | ✅ | snapshot di transaction_items + varian |
+| Tes dua kasir stok terakhir | ✅ | fase-1-10-concurrency.test.js deterministik |
+| OpenAPI | ✅ | `GET /openapi.json` dari Zod |
+| ADR, monorepo, AGENTS.md | ✅ | ADR 0001-0010, npm workspaces, AGENTS.md + skill |
+| CI | ✅ | backend + frontend lint/build/typecheck |
 | Frontend ↔ API | ❌ | localStorage/seed, nol panggilan API |
 | Offline (IndexedDB/PWA/SSE) | ❌ | |
 | Microkernel/plugin | ❌ | |
