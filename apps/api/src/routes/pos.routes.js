@@ -18,6 +18,7 @@ const {
 } = require("../schemas/reports.schema");
 const { paginationSchema } = require("../schemas/pagination.schema");
 const { createTransactionSchema, updateTransactionSchema } = require("../schemas/pos.schema");
+const idempotencyMiddleware = require("../middleware/idempotency");
 
 const router = express.Router();
 
@@ -39,7 +40,7 @@ router.get("/transactions", authorize(["admin", "manager", "cashier", "integrati
   }
 });
 
-router.post("/transactions", authorize(["admin", "manager", "cashier"]), async (request, response, next) => {
+router.post("/transactions", idempotencyMiddleware(), authorize(["admin", "manager", "cashier"]), async (request, response, next) => {
   try {
     const headerKey = request.get("Idempotency-Key");
     const payload = createTransactionSchema.parse(
