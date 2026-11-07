@@ -100,4 +100,13 @@ app.get("/metrics", (_request, response) => {
 // ============================================================
 app.use(errorHandler);
 
+const openapiRoutes = require("./openapi");
+
+// ============================================================
+// OpenAPI spec endpoint
+// ============================================================
+app.get("/openapi.json", (_request, response) => {
+  response.json(openapiRoutes.getOpenApiSpec());
+});
+
 module.exports = app;
